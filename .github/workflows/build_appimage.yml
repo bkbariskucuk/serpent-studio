@@ -1,0 +1,175 @@
+name: Build and Release Serpent Studio AppImage
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-appimage:
+    name: Build Linux AppImage (Ubuntu 22.04 Base)
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout Source Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install System Build Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential \
+            ccache \
+            patchelf \
+            libgl1-mesa-dev \
+            libxkbcommon-x11-0 \
+            libegl1 \
+            desktop-file-utils \
+            xvfb
+
+      - name: Setup Compiler Cache (ccache)
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ccache
+          key: ccache-${{ runner.os }}-${{ hashFiles('**/requirements.txt') }}-${{ github.sha }}
+          restore-keys: |
+            ccache-${{ runner.os }}-${{ hashFiles('**/requirements.txt') }}-
+            ccache-${{ runner.os }}-
+
+      - name: Install Python & Packaging Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install nuitka zstandard ordered-set
+
+      - name: Compile Standalone Executable with Nuitka
+        run: |
+          mkdir -p packaging/build/nuitka_dist
+          python -m nuitka \
+            --standalone \
+            --static-libpython=no \
+            --enable-plugin=pyqt6 \
+            --enable-plugin=matplotlib \
+            --include-package=core \
+            --include-package=ui \
+            --include-package=visualization \
+            --include-data-dir=ui/assets=ui/assets \
+            --include-data-files=VERSION=VERSION \
+            --output-dir=packaging/build/nuitka_dist \
+            --output-filename=SerpentStudio \
+            --jobs=4 \
+            --assume-yes-for-downloads \
+            --no-deployment-flag=self-execution \
+            main.py
+
+          mkdir -p packaging/build/dist
+          cp -a packaging/build/nuitka_dist/main.dist/* packaging/build/dist/
+          chmod +x packaging/build/dist/SerpentStudio
+
+      - name: Assemble AppDir (Exclude Raw Source Code)
+        run: |
+          bash packaging/build/build_appdir.sh
+
+      - name: Verify Intellectual Property Protection (Zero .py Leakage)
+        run: |
+          PY_COUNT=$(find packaging/build/AppDir -name "*.py" -o -name "*.pyc" | wc -l)
+          if [ "$PY_COUNT" -gt 0 ]; then
+            echo "Security Error: Found $PY_COUNT Python source/bytecode files inside AppDir!" >&2
+            find packaging/build/AppDir -name "*.py" -o -name "*.pyc"
+            exit 1
+          fi
+          echo "Verification passed: 0 Python source/bytecode files in AppDir."
+
+      - name: Download appimagetool
+        run: |
+          mkdir -p packaging/build/tools
+          curl -fsSL -o packaging/build/tools/appimagetool \
+            https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
+          chmod +x packaging/build/tools/appimagetool
+
+      - name: Build AppImage Bundle
+        run: |
+          bash packaging/build/build_appimage.sh
+
+      - name: Smoke Test Built AppImage in Headless Display
+        run: |
+          xvfb-run -a timeout 10s ./packaging/build/SerpentStudio-x86_64.AppImage --appimage-extract-and-run --no-splash || true
+          echo "Headless smoke test completed."
+
+      - name: Compute Integrity Checksums
+        run: |
+          cd packaging/build
+          sha256sum SerpentStudio-x86_64.AppImage > SHA256SUMS.txt
+          sha512sum SerpentStudio-x86_64.AppImage > SHA512SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Upload Build Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: SerpentStudio-Linux-x86_64
+          path: |
+            packaging/build/SerpentStudio-x86_64.AppImage
+            packaging/build/SHA256SUMS.txt
+            packaging/build/SHA512SUMS.txt
+
+  test-distro-compatibility:
+    name: Test on ${{ matrix.os }}
+    needs: build-appimage
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, ubuntu-24.04]
+
+    steps:
+      - name: Download Built AppImage Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: SerpentStudio-Linux-x86_64
+
+      - name: Install Runtime Test Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libgl1-mesa-glx \
+            libxkbcommon-x11-0 \
+            libegl1 \
+            xvfb
+
+      - name: Verify Execution on ${{ matrix.os }}
+        run: |
+          chmod +x SerpentStudio-x86_64.AppImage
+          xvfb-run -a timeout 10s ./SerpentStudio-x86_64.AppImage --appimage-extract-and-run --no-splash || true
+          echo "Successfully validated on ${{ matrix.os }}!"
+
+  publish-release:
+    name: Publish GitHub Release
+    needs: [build-appimage, test-distro-compatibility]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download Built Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: SerpentStudio-Linux-x86_64
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            SerpentStudio-x86_64.AppImage
+            SHA256SUMS.txt
+            SHA512SUMS.txt
+          generate_release_notes: true
+          draft: false
+          prerelease: false

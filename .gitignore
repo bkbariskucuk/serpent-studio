@@ -1,0 +1,38 @@
+# ==============================================================================
+# Git Ignore - Public Distribution Repository
+# STRICT IP PROTECTION: Never track raw source code, internals, or binary artifacts
+# ==============================================================================
+
+# Python Source Code & Modules (Proprietary)
+core/
+ui/
+visualization/
+main.py
+tests/
+requirements.txt
+
+# Internal Architecture & AI Assistant Rules
+graphify-out/
+docs/
+.agents/
+AGENTS.md
+CLAUDE.md
+
+# Packaging Engine & Local Scripts
+packaging/
+release/
+sync_and_build.sh
+publish_release.sh
+SerpentStudio
+
+# Large Binaries & Caches
+*.AppImage
+*.zsync
+*.bin
+*.so
+__pycache__/
+*.py[cod]
+*.log
+.DS_Store
+workspace/
+EOF
