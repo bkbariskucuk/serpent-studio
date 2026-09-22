@@ -1,6 +1,6 @@
 ========================================================================
                         SERPENT STUDIO - SÜRÜM NOTLARI
-                             Sürüm: v0.2.50.96
+                             Sürüm: v0.2.52.13
 ========================================================================
 
 [SÜRÜM NUMARALANDIRMA VE BAĞIMSIZ SAYAÇ POLİTİKASI (GEÇERLİ 4 KADEMELİ STANDART)]
@@ -24,6 +24,96 @@
 - Bu dönüşüm yalnızca sürüm notu gösterim standardıdır; geçmiş anlık görüntülerin, manifestoların veya çalışma dosyalarının içeriği değiştirilmez.
 - Kullanılmayan bir sayaç değeri atlanmışsa ilgili sürüm başlığında bunun yayımlanmadığı açıkça belirtilir.
 - Bu tarihçede `v0.1.17.15` kaydı yayımlanmamıştır; sonraki kayıt `v0.1.17.16` olarak devam eder.
+
+========================================================================
+[v0.2.52.13] - Performans İyileştirmeleri, Erişilebilirlik (Renk Körlüğü Modları), Analiz Çıktıları Aktif Dosya Düzeltmesi ve Temaya Duyarlı Bileşenler (2026-09-17)
+------------------------------------------------------------------------
+* Uygulama İçi Delta Güncelleme Motoru (`core/updater.py`, `ui/update_dialog.py`, `ui/main_window.py`):
+  - GitHub Releases CDN üzerinden `version_manifest.json` otomatik sürüm denetimi ve ZSync delta güncellemeleri (`appimageupdatetool`) entegrasyonu.
+  - Yardım menüsüne Güncellemeleri Denetle (`Check for Updates...`) ve Hakkında (`About Serpent Studio`) diyalogları eklendi.
+* Çift Kademeli Kimlik Doğrulama Sistemi (`core/auth.py`, `ui/login_dialog.py`, `tools/manage_users.py`):
+  - Yetkili kullanıcılar (`baris`, `admin`) için PBKDF2-HMAC-SHA256 çevrimdışı doğrulama, genel kullanıcılar için zorunlu bulut doğrulaması.
+  - İzohips topoğrafik temalı splash giriş ekranı, anlık çevrim içi/çevrim dışı durum göstergesi ve oturum yönetimi.
+  - Yerel geliştirme ortamında doğrulama baypası (`dev mode`).
+* Spinbox Tema Geçiş Zamanlamasının Düzeltilmesi (`ui/main_window.py`):
+  - Tema değişimi tetiklendiğinde pencere eski ekran görüntüsü dondurulup yakalanarak erken renk değiştirme (premature flip) tamamen giderildi.
+* İngilizce Standartlaştırması ve Menülerin İyileştirilmesi (`ui/main_window.py`, `ui/popout_canvas.py`, `ui/analysis_outputs.py`):
+  - Menü ve göstergelerdeki tüm Türkçe ifadeler kanonik İngilizceye dönüştürüldü: `&Accessibility`, `Color Blindness` (`Default (Normal)`, `Protanopia`, `Deuteranopia`, `Tritanopia`, `Achromatopsia`).
+* Analiz Çıktılarında Renk Körlüğü Desteği ve Dışa Aktarma (`ui/analysis_outputs.py`, `core/material_palettes.py`):
+  - PPF Canvas ve Matplotlib analiz bileşenlerine Okabe-Ito ve Tol CVD algoritmalarıyla canlı renk körlüğü paletleri bağlandı; PNG dışa aktarımında renk modu seçimi entegre edildi.
+* Analiz Çıktıları Aktif Çalışılan Dosya Senkronizasyonu (`ui/main_window.py`, `ui/analysis_outputs.py`):
+  - Hangi dosyada çalışılıyorsa Analiz Çıktıları sekmesine geçildiğinde o dosyanın sonuçlarının otomatik seçilmesi sağlandı.
+
+========================================================================
+[v0.2.52.12] - Kesintisiz 60 FPS Dalga Geçiş Animasyonu ve Zamanlayıcı Çakışmasının Çözümü (2026-09-14)
+------------------------------------------------------------------------
+* Tema Geçiş Animasyonu Zamanlayıcı ve Kare Akıcılığı (`ui/main_window.py`, `ui/theme_transition.py`):
+  - Tıklama anında `render_initial_frame()` ile ışık hüzmesi yakılarak aktif sekme stilleri senkron uygulanır; arka plan sekmeler animasyon sonrasına (550 ms) ertelenerek 480 ms tam 60 FPS akıcılık sağlandı.
+  - Işık hüzmesi pencerenin sol üst köşesine hizalandı; çift fazlı dalga ekran boyunca kesintisiz akar.
+
+========================================================================
+[v0.2.52.11] - Anında Tema Geçişi (Zero-Lag Theme Transition), Splitter Darboğazı Eliminasyonu ve Hızlı Render Entegrasyonu (2026-09-14)
+------------------------------------------------------------------------
+* Tema Geçişinde Senkron Blokajın Kaldırılması (`ui/main_window.py`, `ui/theme.py`, `ui/theme_transition.py`):
+  - QSplitter handle stilleri doğrudan global QSS'e gömüldü; 5 ayrı splitter için derinlemesine ağaç gezintisi yapan 526 ms'lik setStyleSheet döngüsü kaldırıldı.
+  - Tıklama anında (<15 ms) dalga animasyonu derhal başlatıldı.
+
+========================================================================
+[v0.2.52.10] - Splash Ekranında Tema Ön Yükleme (Preload), LRU Önbellekleme ve Aktif Sekme Öncelikli Anında Tema Geçişi (2026-09-14)
+------------------------------------------------------------------------
+* Splash Ön Yükleme ve Tema Önbelleği (`core/bootstrap.py`, `ui/theme.py`):
+  - `@theme_cached` dekoratörü eklendi; QSS şablonları ve vektör SVG ikonları açılış sekansında önceden derlendi.
+  - Tema geçişi esnasında yalnızca aktif sekme derhal stillendirilir; arka plan sekmeler asenkron güncellenir.
+
+========================================================================
+[v0.2.52.08] - Sekmeler Arası Geçişte Çökme Onarımı ve Modül İçe Aktarım Kararlılığı (2026-09-13)
+------------------------------------------------------------------------
+* Sekmeler Arası Geçiş Hatasının Düzeltilmesi (`ui/main_window.py`):
+  - `ui/main_window.py` başına eksik `sys` ve `os` modül importları eklenerek çekmece animasyonunun durum kontrolünde oluşan NameError çökmesi giderildi.
+
+========================================================================
+[v0.2.52.07] - Kesişmeyen İzohips Topografisi, Kesintisiz Syntax Çekmecesi ve Çift Fazlı Işıma Tema Geçişi (2026-09-13)
+------------------------------------------------------------------------
+* Splash Ekranı İzohips Topografisi (`ui/splash_screen.py`):
+  - Sürekli küresel deformasyon alanı (homeomorfik koordinat haritası) geliştirilerek izohips eğrilerinin birbirini kesmesi engellendi.
+* Syntax Çekmece Animasyonu ve Çift Fazlı Tema Işıması (`ui/main_window.py`, `ui/theme_transition.py`):
+  - Çekmece sıkışması 140px minimum yükseklik kısıtlamasının geçici sıfırlanmasıyla çözüldü; iki kademeli (Infusion + Settling Luster) ışıma dalgası uygulandı.
+
+========================================================================
+[v0.2.52.06] - Akıcı Tema Geçiş Animasyonu, Syntax Drawer Performansı ve List Box Temaya Duyarlılığı (2026-09-13)
+------------------------------------------------------------------------
+* Performans ve Liste Bileşeni Tema Duyarlılığı (`ui/theme.py`, `ui/control_rods.py`, `ui/popout_control_rods.py`):
+  - Çekmece animasyonu 130 ms OutCubic eğrisine çekildi. QListWidget ve QListView açık mod stilleri tanımlanarak Control Rods montaj listesinin karanlıkta kalması giderildi.
+
+========================================================================
+[v0.2.52.05] - Syntax Drawer Akıcı Animasyonu, CRS Sağ Bölme ve CR Slider Knob İzolasyonu, Ayar Sekmesi Etiket/Kutu İzi Kaldırılması (2026-09-13)
+------------------------------------------------------------------------
+* Syntax Çekmece Animasyonu ve CR Gösterge İyileştirmeleri (`ui/main_window.py`, `ui/control_rods.py`):
+  - Panel ve editörler için akıcı yükseklik animasyonu entegre edildi. AxialElevationGaugeWidget ferah taban boyutlarına döndürüldü; etiket arka plan kutucuk izleri temizlendi.
+
+========================================================================
+[v0.2.52.03] - Menu Bar Tekrarlama Giderimi, CR Panel Kutularının Ferahlatılması ve Syntax Stack Dikey Ayırıcı Entegrasyonu (2026-09-13)
+------------------------------------------------------------------------
+* Menü Çubuğu Yinelenmesi ve Splitter Yerleşimi (`ui/main_window.py`, `ui/control_rods.py`):
+  - Menü çubuğunun tekrar tekrar eklenmesi izole `setup_menubar()` ile çözüldü. Sağ panelde betik önizlemeleri tekil `QStackedWidget` altında toplandı; dinamik rastgele izohips üretimi eklendi.
+
+========================================================================
+[v0.2.52.01] - Canvas Dwell Hover Gecikmesi, Sınır Kotu İzolasyonu (ARO), Core/Assembly CR Çizim Eşitliği ve Zoom/Pan Koruma (2026-09-12)
+------------------------------------------------------------------------
+* Canvas İyileştirmeleri ve Sınır Kotu İzolasyonu (`ZoomableGraphicsView`, `MainWindow`, `core/control_rods.py`):
+  - 400 ms dwell timer eklendi. Sınır kotundaki çubuklar için ARO kuralı kesinleştirildi. Core Canvas ve Assembly Canvas kontrol çubuğu çizim eşitliği sağlandı; Zoom/Pan durumu korundu.
+
+========================================================================
+[v0.2.52.00] - Kontrol Çubukları Core Canvas Rozetlerinde Yüzdenin Kaldırılması, Demet Tanımından İsim/Pin ve Fill Renginin Bağlanması, CR Sekmesi Kutu Taşmalarının Giderilmesi (2026-09-12)
+------------------------------------------------------------------------
+* Kontrol Çubukları Rozetleri ve Düzen Yenilemesi (`MainWindow`, `core/control_rods.py`, `ui/control_rods.py`):
+  - Core canvas üzerindeki rozetlerden yüzde kaldırıldı, demet tanımından isim/pin ve dolgu rengi dinamik bağlandı. Yönetim kutuları dikey 2 sütunlu kompakt grid düzenine geçirildi.
+
+========================================================================
+[v0.2.51.101] - Dinamik CR Pin Katmanları & Ölçekleme, Assembly Seçimi Koruma, Kinematik Animasyon ve Pop-Out Penceresi (2026-09-12)
+------------------------------------------------------------------------
+* Kontrol Çubuğu Katmanları ve Pop-Out Penceresi (`MainWindow`, `ui/popout_control_rods.py`):
+  - Çubuk pin halkaları dinamik okunarak kesin fiziksel yarıçap oranlarıyla çizildi. Betik düzenlenirken montaj seçimi korundu. Control Rod Settings için pop-out penceresi ve 320 ms eksenel hareket animasyonu eklendi.
 
 ========================================================================
 [v0.2.51.100] - Başlatma Yaşam Döngüsü Onarımı, Erken Çıkış Engellemesi ve Yetim Kalan Splash Süreci Koruması (2026-09-12)

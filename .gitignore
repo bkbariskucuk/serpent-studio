@@ -7,9 +7,11 @@
 core/
 ui/
 visualization/
+tools/
 main.py
 tests/
 requirements.txt
+credentials.json
 
 # Internal Architecture & AI Assistant Rules
 graphify-out/
