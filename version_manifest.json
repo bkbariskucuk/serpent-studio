@@ -4,9 +4,9 @@
   "mandatory": false,
   "release_date": "2026-09-23",
   "release_title": "Serpent Studio v0.2.52.13",
-  "release_notes": "Initial Production Release with In-App Delta Updates and Dual-Tier Authentication",
-  "sha256": "52b3d4f2baf3213f106115e4e4d12ba5dd5fd7f9c1cad10a07a256d6ad1615fd",
-  "file_size_bytes": 166361592,
+  "release_notes": "Release v0.2.52.13 with In-App Delta Updates and Dual-Tier Authentication",
+  "sha256": "73a786c29b25f75ddae20806fb1ab650c9c693fee7856a4cc394c724ce34d55c",
+  "file_size_bytes": 138361336,
   "download_url": "https://github.com/bkbariskucuk/serpent-studio/releases/download/v0.2.52.13/SerpentStudio-x86_64.AppImage",
   "zsync_url": "https://github.com/bkbariskucuk/serpent-studio/releases/download/v0.2.52.13/SerpentStudio-x86_64.AppImage.zsync"
 }
