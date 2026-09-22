@@ -1,6 +1,6 @@
 ========================================================================
                         SERPENT STUDIO - SÜRÜM NOTLARI
-                             Sürüm: v0.2.52.15
+                             Sürüm: v0.2.53.15
 ========================================================================
 
 [SÜRÜM NUMARALANDIRMA VE BAĞIMSIZ SAYAÇ POLİTİKASI (GEÇERLİ 4 KADEMELİ STANDART)]
@@ -24,6 +24,21 @@
 - Bu dönüşüm yalnızca sürüm notu gösterim standardıdır; geçmiş anlık görüntülerin, manifestoların veya çalışma dosyalarının içeriği değiştirilmez.
 - Kullanılmayan bir sayaç değeri atlanmışsa ilgili sürüm başlığında bunun yayımlanmadığı açıkça belirtilir.
 - Bu tarihçede `v0.1.17.15` kaydı yayımlanmamıştır; sonraki kayıt `v0.1.17.16` olarak devam eder.
+
+========================================================================
+[v0.2.53.15] - Erişilebilirlik Paketi (Ölçekleme, Doku Tarama, Kılavuz Çizgileri, Odaklama, Animasyon Durdurma, Tamamlama Bildirimi) ve Sıfır Başlangıç Durumu (2026-09-23)
+------------------------------------------------------------------------
+Kapsam:
+- Tamamen Sıfır / Temiz Başlangıç Alanı: Uygulama ilk açıldığında veya sıfır kurulumda hiçbir artık/örnek dosya ile gelmez. Önceden otomatik oluşturulan umay.txt ve workspace/umay alt klasörü kaldırıldı; temiz untitled.txt arabelleği ile başlar, çalışma alanı boş tutulur.
+- Madde 1 (Arayüz Ölçekleme & Yakınlaştırma): %100 (Varsayılan), %125, %150, %175 ön ayarları ile Ctrl++, Ctrl+-, Ctrl+0 kısayolları eklendi. Tüm widget'lar, formlar ve butonlar orantılı olarak ölçeklenir.
+- Madde 2 (Malzeme Doku / Geometrik Tarama): Renk körlüğü ve düşük görme kullanıcıları için yakıt, zarf, kontrol çubuğu ve soğutucu malzemelerine standart dışı renk ayrımı sağlayan geometrik Qt tarama desenleri (DiagCross, HorPattern, CrossPattern vb.) entegre edildi.
+- Madde 4 (Yüksek Karşıtlıklı Odak Göstergesi): Klavye (Tab) geziniminde odaklanan tüm bileşenlerin etrafında 2px parlak neon camgöbeği (#38BDF8 / #0EA5E9) belirgin sınır halkası eklendi.
+- Madde 5 (Tüm Animasyonları Durdur): Kullanıcı tercihi doğrultusunda açılış ekranı dalga/nefes alma/parıltı efektlerini, yığın sayfa kayma animasyonlarını ve kayan durum metinlerini donduran tek anahtar eklendi.
+- Madde 7 (Simülasyon Tamamlama Açılır Bildirimi): Sesli uyarı yerine çalışma süresi, k-eff değeri, çıkış kodu ve hata önizlemesini içeren şık SimulationCompletionDialog açılır penceresi bağlandı. Çıktıları ve konsolu doğrudan açma imkanı sunar.
+- Madde 8 (Kanvas Kılavuz & Koordinat Çaprazı): Çekirdek ve yakıt çubuğu kanvaslarında imleç altında kesikli tam ekran kılavuz çizgileri ve merkez hedef artı işareti eklendi.
+
+Doğrulama:
+- tests/test_accessibility_and_color_blindness.py (21 test) ve toplam 77 birim test başarılı bir şekilde doğrulandı (OK).
 
 ========================================================================
 [v0.2.52.15] - Linux Üst Düzey Pencere Mimarisi Tıklama Düzeltmesi ve Zarif Güncelleme Arayüzü (2026-09-23)
