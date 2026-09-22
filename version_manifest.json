@@ -1,12 +1,12 @@
 {
-  "latest_version": "v0.2.52.14",
+  "latest_version": "v0.2.52.15",
   "min_supported_version": "v0.2.50.00",
   "mandatory": false,
   "release_date": "2026-09-23",
-  "release_title": "Serpent Studio v0.2.52.14",
-  "release_notes": "Seamless Splash-to-Auth Transition and In-Place Frame Animation",
-  "sha256": "841641a43bd4d261a9b673a31dd8a5c8e62651f7985902cb5ecfab90c19afd7a",
-  "file_size_bytes": 138373624,
-  "download_url": "https://github.com/bkbariskucuk/serpent-studio/releases/download/v0.2.52.14/SerpentStudio-x86_64.AppImage",
-  "zsync_url": "https://github.com/bkbariskucuk/serpent-studio/releases/download/v0.2.52.14/SerpentStudio-x86_64.AppImage.zsync"
+  "release_title": "Serpent Studio v0.2.52.15",
+  "release_notes": "Linux Top-Level Window Fix & Redesigned Modern Update Dialog",
+  "sha256": "b4dd44f61770428e5e44c0ef253dea6af8190399520fe057cc813954de9979c8",
+  "file_size_bytes": 138381816,
+  "download_url": "https://github.com/bkbariskucuk/serpent-studio/releases/download/v0.2.52.15/SerpentStudio-x86_64.AppImage",
+  "zsync_url": "https://github.com/bkbariskucuk/serpent-studio/releases/download/v0.2.52.15/SerpentStudio-x86_64.AppImage.zsync"
 }
