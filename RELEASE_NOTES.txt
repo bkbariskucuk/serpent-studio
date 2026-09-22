@@ -1,6 +1,6 @@
 ========================================================================
                         SERPENT STUDIO - SÜRÜM NOTLARI
-                             Sürüm: v0.2.52.13
+                             Sürüm: v0.2.52.14
 ========================================================================
 
 [SÜRÜM NUMARALANDIRMA VE BAĞIMSIZ SAYAÇ POLİTİKASI (GEÇERLİ 4 KADEMELİ STANDART)]
@@ -24,6 +24,17 @@
 - Bu dönüşüm yalnızca sürüm notu gösterim standardıdır; geçmiş anlık görüntülerin, manifestoların veya çalışma dosyalarının içeriği değiştirilmez.
 - Kullanılmayan bir sayaç değeri atlanmışsa ilgili sürüm başlığında bunun yayımlanmadığı açıkça belirtilir.
 - Bu tarihçede `v0.1.17.15` kaydı yayımlanmamıştır; sonraki kayıt `v0.1.17.16` olarak devam eder.
+
+========================================================================
+[v0.2.52.14] - Kesintisiz Splash-Giriş Ekranı Animasyonlu Geçişi ve Bütünleşik Pencere Mimarisi (2026-09-23)
+------------------------------------------------------------------------
+* Kesintisiz Splash-Kimlik Doğrulama Geçişi (`ui/splash_screen.py`, `main.py`):
+  - Splash ekranındaki yükleme barı %100'e ulaştığında pencere çerçevesi kaybolmadan, aynı pencere içinde akıcı bir kubik animasyonla (~380 ms) şifre giriş formuna geçiş sağlandı.
+  - İlerleme çubuğu ve görev metni sönümlenirken, logo ve başlık üst başlık konumuna kayar, kullanıcı adı/şifre giriş bileşenleri ve bulut durum rozeti yumuşakça belirir.
+  - Başarılı giriş sonrası pencere sönümlenerek ana pencereye geçilir.
+* Pencere Taşınabilirliği ve Etkileşim İyileştirmeleri (`ui/splash_screen.py`):
+  - Çerçevesiz açılış penceresi arka planından tutularak masaüstünde sürüklenebilir hale getirildi.
+  - Çıkış (✕) ve simge durumuna küçültme (—) butonları hem yükleme hem giriş aşamalarında aktif tutuldu.
 
 ========================================================================
 [v0.2.52.13] - Performans İyileştirmeleri, Erişilebilirlik (Renk Körlüğü Modları), Analiz Çıktıları Aktif Dosya Düzeltmesi ve Temaya Duyarlı Bileşenler (2026-09-17)
