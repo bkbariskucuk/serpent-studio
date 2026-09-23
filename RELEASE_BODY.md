@@ -47,6 +47,17 @@
 
 ---
 
+### 🔒 Dosya Bütünlüğü Doğrulama (Checksums)
+
+- **SHA-256:** `2aafaa79e7f88b809def92b060a9333393a14190d8a5e93e2b0c259d13cef379`
+
+Terminalden doğrulamak için:
+```bash
+echo "2aafaa79e7f88b809def92b060a9333393a14190d8a5e93e2b0c259d13cef379  SerpentStudio-x86_64.AppImage" | sha256sum -c
+```
+
+---
+
 ### 💻 Sistem Gereksinimleri
 
 - **İşletim Sistemi:** Linux x86_64 (Ubuntu 20.04+, Debian 11+, Fedora 36+, Arch Linux vb.)
