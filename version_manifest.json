@@ -1,12 +1,12 @@
 {
-  "latest_version": "v0.2.53.16",
+  "latest_version": "v0.2.54.17",
   "min_supported_version": "v0.2.50.00",
   "mandatory": false,
-  "release_date": "2026-09-23",
-  "release_title": "Serpent Studio v0.2.53.16",
-  "release_notes": "Comprehensive Animation Suppression and Zero-Lag Splash Engine",
-  "sha256": "2aafaa79e7f88b809def92b060a9333393a14190d8a5e93e2b0c259d13cef379",
-  "file_size_bytes": 138451448,
-  "download_url": "https://github.com/bkbariskucuk/serpent-studio/releases/download/v0.2.53.16/SerpentStudio-x86_64.AppImage",
-  "zsync_url": "https://github.com/bkbariskucuk/serpent-studio/releases/download/v0.2.53.16/SerpentStudio-x86_64.AppImage.zsync"
+  "release_date": "2026-09-24",
+  "release_title": "Serpent Studio v0.2.54.17",
+  "release_notes": "Thermal-Hydraulic Core ID & CRS Equivalence Studio, Dynamic Serpent Coloring & Theme Polish",
+  "sha256": "fa9cf6ac81321f54c34a64b64895af445a42f050661a48705aee07f0021ad5a8",
+  "file_size_bytes": 139381240,
+  "download_url": "https://github.com/bkbariskucuk/serpent-studio/releases/download/v0.2.54.17/SerpentStudio-x86_64.AppImage",
+  "zsync_url": "https://github.com/bkbariskucuk/serpent-studio/releases/download/v0.2.54.17/SerpentStudio-x86_64.AppImage.zsync"
 }

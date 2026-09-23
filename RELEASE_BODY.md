@@ -1,4 +1,4 @@
-# Serpent Studio v0.2.53.16
+# Serpent Studio v0.2.54.17
 
 > Advanced Graphical User Interface, Interactive Core Geometry Visualizer, and Analytical Post-Processing Platform for **Serpent 2 Monte Carlo** Reactor Physics.
 
@@ -8,7 +8,7 @@
 
 > [!IMPORTANT]
 > **Tek İndirmeniz Gereken Dosya / Only File You Need:**  
-> 👉 [**`SerpentStudio-x86_64.AppImage`**](https://github.com/bkbariskucuk/serpent-studio/releases/download/v0.2.53.16/SerpentStudio-x86_64.AppImage) (~132 MB)
+> 👉 [**`SerpentStudio-x86_64.AppImage`**](https://github.com/bkbariskucuk/serpent-studio/releases/download/v0.2.54.17/SerpentStudio-x86_64.AppImage) (~132 MB)
 
 #### 🚀 Nasıl Çalıştırılır? / Quick Start:
 1. **İzin Verin:** Dosyaya sağ tıklayın -> *Özellikler* -> *İzinler* -> *"Dosyayı program gibi çalıştırmaya izin ver"* seçeneğini işaretleyin.  
@@ -28,7 +28,7 @@
 
 ---
 
-### 🌟 Bu Sürümde Neler Yeni? (Release Notes - v0.2.53.16)
+### 🌟 Bu Sürümde Neler Yeni? (Release Notes - v0.2.54.17)
 
 #### 1. ⚡ Sıfır Gecikmeli & Akıcı Splash Ekranı (Zero-Lag Splash Engine)
 - **Donanım Hızlandırmalı Önbellekleme:** 969 noktalı 23 izohips topoğrafya eğrisi, radyal parlamalar ve degrade arka plan GPU dostu `QPixmap` önbelleğinde önceden işlenir.
@@ -49,11 +49,11 @@
 
 ### 🔒 Dosya Bütünlüğü Doğrulama (Checksums)
 
-- **SHA-256:** `2aafaa79e7f88b809def92b060a9333393a14190d8a5e93e2b0c259d13cef379`
+- **SHA-256:** `fa9cf6ac81321f54c34a64b64895af445a42f050661a48705aee07f0021ad5a8`
 
 Terminalden doğrulamak için:
 ```bash
-echo "2aafaa79e7f88b809def92b060a9333393a14190d8a5e93e2b0c259d13cef379  SerpentStudio-x86_64.AppImage" | sha256sum -c
+echo "fa9cf6ac81321f54c34a64b64895af445a42f050661a48705aee07f0021ad5a8  SerpentStudio-x86_64.AppImage" | sha256sum -c
 ```
 
 ---

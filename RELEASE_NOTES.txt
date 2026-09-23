@@ -1,6 +1,6 @@
 ========================================================================
                         SERPENT STUDIO - SÜRÜM NOTLARI
-                             Sürüm: v0.2.53.16
+                             Sürüm: v0.2.54.17
 ========================================================================
 
 [SÜRÜM NUMARALANDIRMA VE BAĞIMSIZ SAYAÇ POLİTİKASI (GEÇERLİ 4 KADEMELİ STANDART)]
@@ -24,6 +24,26 @@
 - Bu dönüşüm yalnızca sürüm notu gösterim standardıdır; geçmiş anlık görüntülerin, manifestoların veya çalışma dosyalarının içeriği değiştirilmez.
 - Kullanılmayan bir sayaç değeri atlanmışsa ilgili sürüm başlığında bunun yayımlanmadığı açıkça belirtilir.
 - Bu tarihçede `v0.1.17.15` kaydı yayımlanmamıştır; sonraki kayıt `v0.1.17.16` olarak devam eder.
+
+========================================================================
+[v0.2.54.17] - Çekirdek ID & Kontrol Çubuğu (CRS) Haritalama Stüdyosu, Dinamik Eşdeğerlik, Serpent Renklendirme ve Tema İyileştirmeleri (2026-09-24)
+------------------------------------------------------------------------
+1. Çekirdek ID & Kontrol Çubuğu (CRS) Haritalama Stüdyosu (Core Equivalence & CRS Studio):
+   - Yeni interaktif `THCoreManualMapperDialog` penceresi eklendi; kullanıcı Core Canvas üzerinde hücreleri tek tek veya çoklu seçerek Demet Tabanı (A, B, C, D vb.), Radyal Eşdeğerlik ID'si (malzeme özellikleri), Kontrol Çubuğu Türü (Regulating vs Shutdown) ve CR Bankası (R1..Rn, S1..Sn) atayabilir.
+   - 4-kat ve 8-kat radyal dairesel simetri yayma (Symmetry Replication) yeteneği eklendi.
+   - Doğrudan TH İterasyon nesnelerine ve CRS Sekmesine (`tab_control_rods.system`) çift yönlü senkronizasyon sağlandı.
+2. Dinamik Demet Ayrıştırma ve Doğrulanmış Öneri Motoru:
+   - `THCoreAdapter.analyze_core_assemblies` ve `auto_map_core_geometry` geliştirildi; `A2R1` (Regulating) ile `A2S2` (Shutdown) gibi aynı taban ve ID'ye sahip fakat farklı kontrol çubuğu taşıyan demetlerin birbiri üzerine yazılması engellendi, her biri bağımsız `THBundleInstance` olarak yapılandırıldı.
+   - Sıfırdan oluşturulan veya harici geometrilerde radyal akı kosinüs profili üzerinden otomatik radyal sıcaklık ($T_f, T_w, \rho_w, T_{clad}$) ve eşdeğerlik halka önerileri doğrulandı.
+   - Yapısal ve yansıtıcı malzemelerin (ss304, graphite, water_refl) yakıt demeti sanılarak sahte taban demetleri oluşturması filtrelendi.
+3. Otomatik Malzeme İsimlendirme:
+   - Belirlenen ID'ye göre `mat fuel_375_{base}{id}` ve `mat water_{base}{id}` malzeme kartları otomatik oluşturulup Serpent standartlarıyla tam uyumlu hale getirildi.
+4. Tam Ekran / Pop-out Pencerelerinde Esc ile Geri Yerleştirme (Esc Dock-Back):
+   - TH Popout Panel (`THPopoutPanelDialog`) ve TH Popout Canvas (`THPopoutCanvasDialog`) pencerelerinde `Esc` tuşuna basıldığında ana pencereye pürüzsüz dock-back sağlandı.
+5. Serpent Deterministik Demet Renklendirme Algoritması:
+   - Serpent 2 C kaynak kodundaki `putplotcolors.c` algoritması referans alınarak CRC32 token hash ve altın oran ($\phi \approx 0.618034$) tabanlı deterministik, yüksek kontrastlı renk dağılımı uygulandı; Regulating için kehribar/sıcak, Shutdown için mor/soğuk renk tonlaması sağlandı.
+6. Aydınlık Tema ve Arayüz Kontrast İyileştirmeleri:
+   - `THAssemblyDetailDialog`, `AssemblyPinGraphicWidget`, `AssemblyCustomizerDialog` ve `THCoreManualMapperDialog` pencerelerinde aydınlık modda siyah arka plan sızıntıları giderildi, `#F8FAFC` / `#FFFFFF` / `#0F172A` paletiyle tam uyumlu görsel bütünlük sağlandı.
 
 ========================================================================
 [v0.2.53.16] - Kapsamlı Animasyon Durdurma Yayılımı, Sıfır Gecikmeli Splash Optimizasyonu ve Çalışma Alanı Bütünlüğü (2026-09-23)
