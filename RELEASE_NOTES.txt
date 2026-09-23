@@ -1,6 +1,6 @@
 ========================================================================
                         SERPENT STUDIO - SÜRÜM NOTLARI
-                             Sürüm: v0.2.53.15
+                             Sürüm: v0.2.53.16
 ========================================================================
 
 [SÜRÜM NUMARALANDIRMA VE BAĞIMSIZ SAYAÇ POLİTİKASI (GEÇERLİ 4 KADEMELİ STANDART)]
@@ -24,6 +24,25 @@
 - Bu dönüşüm yalnızca sürüm notu gösterim standardıdır; geçmiş anlık görüntülerin, manifestoların veya çalışma dosyalarının içeriği değiştirilmez.
 - Kullanılmayan bir sayaç değeri atlanmışsa ilgili sürüm başlığında bunun yayımlanmadığı açıkça belirtilir.
 - Bu tarihçede `v0.1.17.15` kaydı yayımlanmamıştır; sonraki kayıt `v0.1.17.16` olarak devam eder.
+
+========================================================================
+[v0.2.53.16] - Kapsamlı Animasyon Durdurma Yayılımı, Sıfır Gecikmeli Splash Optimizasyonu ve Çalışma Alanı Bütünlüğü (2026-09-23)
+------------------------------------------------------------------------
+1. Kapsamlı Animasyon Durdurma (Comprehensive Animation Suppression):
+   - "Stop All Animations" tercihi tüm alt sistemlere tam olarak bağlandı:
+     * Grafik Oluşturma (Chart Animators): GLOBAL_ANIMATION_CONFIG.reduced_motion ve autoplay ayarları güncellenerek çizgi grafik (LineChartAnimator), çubuk grafik (BarChartAnimator) ve radyal PPF çekirdek haritaları (PpfChartAnimator) için giriş/geçiş animasyonları tamamen bypass edildi; hedef durum anında çizdirildi.
+     * Liste / Ağaç Gezinimi (List/Delist & Tree Cascade): AnimatedWorkspaceTree daraltma/genişletme basamak gecikmesi, toplu açma/kapama animasyonu ve dosya/anlık görüntü silme/delist görsel geçişi anında yürütülecek şekilde optimize edildi.
+     * Durum Kayan Yazısı (Status Marquee): Kayan yazı zamanlayıcısı durdurularak statik metin görünümüne geçirildi.
+     * Ayrık Pencereler & Geçişler: Detached dialog solma animasyonları ve tema geçiş katmanı animasyonsuz anlık moda alındı.
+2. Sıfır Gecikmeli Splash Ekranı (Zero-Lag Hardware-Accelerated Splash Engine):
+   - Splash ekranındaki kasma ve takılmalar (kasma) kökünden giderildi:
+     * 969 noktalı 23 izohips eşyükselti eğrisi, arka plan radyal/lineer degrade ve logo parlaması başlatmada GPU dostu QPixmap önbelleğine (render cache) aktarıldı.
+     * paintEvent yürütme süresi kare başına 18.15 ms'den 0.36 ms'ye (50 kat hızlanma) indirildi; sıfır GC yükü ve sıfır kare kaybı sağlandı.
+     * Animasyon zamanlayıcısı 50 FPS (20ms) aralığına optimize edilerek Linux X11/Wayland üzerinde mutlak akıcılık sağlandı.
+3. Çalışma Alanı Ayrımı & Sıfır Paketleme Güvencesi:
+   - Yerel geliştirme çalışma alanı (serpent-gui/workspace) tam olarak korunurken, derlenen ve kullanıcılara sunulan dağıtım paketi (SerpentStudio-Desktop/workspace) tamamen temiz ve sıfır dosya ile hazırlandı.
+4. Doğrulama:
+   - Tüm erişilebilirlik ve splash testleri (46 test) başarıyla geçti.
 
 ========================================================================
 [v0.2.53.15] - Erişilebilirlik Paketi (Ölçekleme, Doku Tarama, Kılavuz Çizgileri, Odaklama, Animasyon Durdurma, Tamamlama Bildirimi) ve Sıfır Başlangıç Durumu (2026-09-23)

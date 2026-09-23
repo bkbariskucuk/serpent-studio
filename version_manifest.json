@@ -1,12 +1,12 @@
 {
-  "latest_version": "v0.2.53.15",
+  "latest_version": "v0.2.53.16",
   "min_supported_version": "v0.2.50.00",
   "mandatory": false,
   "release_date": "2026-09-23",
-  "release_title": "Serpent Studio v0.2.53.15",
-  "release_notes": "Accessibility Suite: UI Scaling, Pattern Hatching, Crosshairs, Focus, Stop Animations, Completion Popup and Clean Base Workspace",
-  "sha256": "a09fd9bed68584b9c75def9fc4f9a9841c7d32147ce2e803fcd4d8b825994c30",
-  "file_size_bytes": 138430968,
-  "download_url": "https://github.com/bkbariskucuk/serpent-studio/releases/download/v0.2.53.15/SerpentStudio-x86_64.AppImage",
-  "zsync_url": "https://github.com/bkbariskucuk/serpent-studio/releases/download/v0.2.53.15/SerpentStudio-x86_64.AppImage.zsync"
+  "release_title": "Serpent Studio v0.2.53.16",
+  "release_notes": "Comprehensive Animation Suppression and Zero-Lag Splash Engine",
+  "sha256": "2aafaa79e7f88b809def92b060a9333393a14190d8a5e93e2b0c259d13cef379",
+  "file_size_bytes": 138451448,
+  "download_url": "https://github.com/bkbariskucuk/serpent-studio/releases/download/v0.2.53.16/SerpentStudio-x86_64.AppImage",
+  "zsync_url": "https://github.com/bkbariskucuk/serpent-studio/releases/download/v0.2.53.16/SerpentStudio-x86_64.AppImage.zsync"
 }
