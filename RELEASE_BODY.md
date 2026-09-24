@@ -60,11 +60,11 @@
 
 ### 🔒 Dosya Bütünlüğü Doğrulama (Checksums)
 
-- **SHA-256:** `PENDING_BUILD_HASH`
+- **SHA-256:** `4944bb3828df3c2736270dc320197b153c2d8294cd395c02a5fb151cc1187905`
 
 Terminalden doğrulamak için:
 ```bash
-echo "PENDING_BUILD_HASH  SerpentStudio-x86_64.AppImage" | sha256sum -c
+echo "4944bb3828df3c2736270dc320197b153c2d8294cd395c02a5fb151cc1187905  SerpentStudio-x86_64.AppImage" | sha256sum -c
 ```
 
 ---
