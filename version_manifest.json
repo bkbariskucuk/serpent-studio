@@ -1,12 +1,12 @@
 {
-  "latest_version": "v0.2.54.17",
+  "latest_version": "v0.2.55.18",
   "min_supported_version": "v0.2.50.00",
   "mandatory": false,
   "release_date": "2026-09-24",
-  "release_title": "Serpent Studio v0.2.54.17",
-  "release_notes": "Thermal-Hydraulic Core ID & CRS Equivalence Studio, Dynamic Serpent Coloring & Theme Polish",
-  "sha256": "fa9cf6ac81321f54c34a64b64895af445a42f050661a48705aee07f0021ad5a8",
-  "file_size_bytes": 139381240,
-  "download_url": "https://github.com/bkbariskucuk/serpent-studio/releases/download/v0.2.54.17/SerpentStudio-x86_64.AppImage",
-  "zsync_url": "https://github.com/bkbariskucuk/serpent-studio/releases/download/v0.2.54.17/SerpentStudio-x86_64.AppImage.zsync"
+  "release_title": "Serpent Studio v0.2.55.18",
+  "release_notes": "Serpent Syntax Preview Floating Search & Replace, Smart Include Resolution, and Fontconfig / Signal Crash Prevention",
+  "sha256": "4944bb3828df3c2736270dc320197b153c2d8294cd395c02a5fb151cc1187905",
+  "file_size_bytes": 139647480,
+  "download_url": "https://github.com/bkbariskucuk/serpent-studio/releases/download/v0.2.55.18/SerpentStudio-x86_64.AppImage",
+  "zsync_url": "https://github.com/bkbariskucuk/serpent-studio/releases/download/v0.2.55.18/SerpentStudio-x86_64.AppImage.zsync"
 }

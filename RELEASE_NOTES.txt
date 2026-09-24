@@ -1,6 +1,6 @@
 ========================================================================
                         SERPENT STUDIO - SÜRÜM NOTLARI
-                             Sürüm: v0.2.54.17
+                             Sürüm: v0.2.55.18
 ========================================================================
 
 [SÜRÜM NUMARALANDIRMA VE BAĞIMSIZ SAYAÇ POLİTİKASI (GEÇERLİ 4 KADEMELİ STANDART)]
@@ -24,6 +24,31 @@
 - Bu dönüşüm yalnızca sürüm notu gösterim standardıdır; geçmiş anlık görüntülerin, manifestoların veya çalışma dosyalarının içeriği değiştirilmez.
 - Kullanılmayan bir sayaç değeri atlanmışsa ilgili sürüm başlığında bunun yayımlanmadığı açıkça belirtilir.
 - Bu tarihçede `v0.1.17.15` kaydı yayımlanmamıştır; sonraki kayıt `v0.1.17.16` olarak devam eder.
+
+========================================================================
+[v0.2.55.18] - Serpent Syntax Preview Kayan Ctrl+F Arama & Değiştirme, Akıllı Include Önizlemesi ve Fontconfig Kararlılık Koruması (2026-09-24)
+------------------------------------------------------------------------
+1. Serpent Syntax Preview İçin Kayan (Floating) Ctrl+F Arama & Değiştirme Çubuğu:
+   - Kod editörünün üzerine doğrudan oturan (overlay), sayfa mizanpajını kaydırmayan, gölgeli ve yuvarlatılmış köşeli modern arama çubuğu (`SearchBarWidget`) eklendi.
+   - Eşleşme sayacı (örn. `1 / 4` veya `No results`), önceki (`▲` / `Shift+Enter`), sonraki (`▼` / `Enter`) eşleşme gezinmesi sağlandı.
+   - Büyük/küçük harf duyarlılığı (`Aa`), tam kelime (`\b`), düzenli ifade (`.*`) filtreleri ve `Ctrl+H` / `⇄` ile açılan zarif değiştirme paneli entegre edildi.
+   - Seçili metni otomatik arama çubuğuna aktarma ve `Esc` tuşuyla arama çubuğunu kapatıp odağı anında kod editörüne aktarma yeteneği eklendi; kısayol çakışmaları giderildi.
+2. Akıllı Include Dosyası Çözümleme ve Harici Dosya Önizlemesi:
+   - `_update_include_files_combo` ve `_on_preview_file_selected` metotları `THIncludeResolver` mimarisiyle entegre edildi.
+   - `include "tip_a.txt"` gibi göreceli veya kök include tanımları; proje dizini, `Base Condition`, `includes`, `inc`, `bundles` ve masaüstü arama yolları taranarak otomatik çözümlenir ve editörde gösterilir.
+   - Açılır listeye `+ Browse External Include...` seçeneği eklenerek diskten istenen harici Serpent include dosyalarının incelenebilmesi sağlandı.
+   - Önizleme esnasında girdi üretiminin include dosyasının üzerine yazması engellendi; geçici eksik dosya önbellek kalıntıları temizlendi.
+3. Fontconfig ve Unicode Fallback Çökme Koruması (CRS Tab, TH Canvas, Malzeme Düzenleyici):
+   - Sistemde KaTeX WOFF web yazı tiplerinin (`KaTeX_AMS-Regular.woff`) varsayılan emoji/sembol fallback fontu olarak atanması nedeniyle `libfontconfig.so.1` (`FcCharSetHasChar`) seviyesinde oluşan `SIGSEGV` çökmesi kökünden giderildi.
+   - `~/.config/fontconfig/conf.d/99-serpent-fix-katex-woff.conf` konfigürasyonu ve `main.py` içerisine otomatik `_ensure_fontconfig_safety()` koruma mekanizması eklendi.
+   - `ui/material_dialog.py` ve `ui/pin_dialog.py` içerisindeki non-BMP Unicode karakterler temizlendi; CRS sekmesi geçişi, TH Canvas demet etkileşimleri ve malzeme düzenleme pencereleri %100 kararlı hale getirildi.
+4. TH Demet ID & CRS Haritalama Penceresi (Manual Mapper) Uygulama ve Sinyal Çökme Koruması:
+   - `THCoreManualMapperDialog` penceresinde parametreler değiştirilip "Uygula ve TH / CRS ile Senkronize Et" tıklandığında `THTemplatePage` nesnesinde tanımlı olmayan `system_modified` çağrısından kaynaklanan `AttributeError` çökmesi kökünden giderildi.
+   - `THTemplatePage` sınıfına `system_modified = pyqtSignal()` tanımlandı, `_on_system_modified` çağrısı eklendi ve diyalog kabul işleyicisi hata yakalama bloklarıyla donatıldı.
+   - `_on_save_and_apply` akışında CRS Tab (`tab_control_rods`) senkronizasyonu bağımsız koruma bloğuna alındı ve haritalama dışı kalan yetim demet örnekleri otomatik temizlendi.
+   - `main.py` içerisine küresel `_global_exception_handler` kalkanı entegre edilerek PyQt6 slotlarında oluşabilecek beklenmedik istisnaların uygulamayı çökertmesi (qFatal/abort) tamamen engellendi.
+5. Kapsamlı Otomasyon ve Regresyon Testleri:
+   - `tests/test_search_include_and_crashes.py` test modülü eklenerek tüm yeni yetenekler, manual mapper uygulama akışı ve çökme senaryoları tam test güvencesine alındı.
 
 ========================================================================
 [v0.2.54.17] - Çekirdek ID & Kontrol Çubuğu (CRS) Haritalama Stüdyosu, Dinamik Eşdeğerlik, Serpent Renklendirme ve Tema İyileştirmeleri (2026-09-24)
