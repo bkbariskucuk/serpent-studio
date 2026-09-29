@@ -1,6 +1,6 @@
 ========================================================================
-                        SERPENT STUDIO - SÜRÜM NOTLARI
-                             Sürüm: v0.2.55.18
+                          SERPENT STUDIO - SÜRÜM NOTLARI
+                               Sürüm: v0.2.58.30
 ========================================================================
 
 [SÜRÜM NUMARALANDIRMA VE BAĞIMSIZ SAYAÇ POLİTİKASI (GEÇERLİ 4 KADEMELİ STANDART)]
@@ -24,6 +24,274 @@
 - Bu dönüşüm yalnızca sürüm notu gösterim standardıdır; geçmiş anlık görüntülerin, manifestoların veya çalışma dosyalarının içeriği değiştirilmez.
 - Kullanılmayan bir sayaç değeri atlanmışsa ilgili sürüm başlığında bunun yayımlanmadığı açıkça belirtilir.
 - Bu tarihçede `v0.1.17.15` kaydı yayımlanmamıştır; sonraki kayıt `v0.1.17.16` olarak devam eder.
+
+========================================================================
+[v0.2.59.32] - Çevrimdışı Kimlik Doğrulama Güvenliği, Altıgen Kafes Çizim Restorasyonu ve Arayüz İyileştirmeleri (2026-09-29)
+------------------------------------------------------------------------
+KAPSAM:
+1. Çevrimdışı Kimlik Doğrulama Güvenliği & Özel Yerel Hesap:
+   - Önceki genel çevrimdışı kullanıcı hesapları (admin, baris) ve varsayılan parolaları sistemden tamamen kaldırıldı.
+   - Yerel yetkili kullanıcı adı `bariskucuk` olarak tanımlandı ve 16 haneli yüksek entropili güçlü parola ile koruma altına alındı (PBKDF2-HMAC-SHA256).
+   - `credentials.json`, `~/.config/serpent-studio/local_credentials.json` ve çekirdek auth modülü yeni güvenlik politikasıyla güncellendi; testler ile doğrulandı.
+2. Yakıt Demeti (Assembly) Altıgen Kafes Çizim Restorasyonu:
+   - Çoklu dil (i18n) geçişlerinde combobox seçenek metinlerinin teknik Serpent sözdizimini (Square Grid, Hexagonal Lattices, Circular Ring) bozması engellendi.
+   - Demet çizim motoru (`draw_assembly_canvas`), demet lattice tipi (type 2/3), indeks ve metin anahtarlarını eksiksiz kapsayacak şekilde altıgen geometri çizimini (`ClickableCoreHexItem`) güvenceye aldı.
+3. Arayüz ve Tema İyileştirmeleri:
+   - Sayısal giriş (SpinBox) üzerine gelindiğinde (hover) beliren tooltip pencerelerinin simsiyah açılma sorunu giderildi; Dark ve Light temalarla tam uyumlu dinamik QSS ve palet entegrasyonu sağlandı.
+   - Serpent Input Preview başlığı iki kademeli hiyerarşik yapıya geçirilerek panel daraltılsa bile combobox veya butonların altında kalması engellendi.
+   - Kontrol Çubuğu (CRS) ayrık pencere (Popout) iletişim kutusunda buton, kaydırma çubuğu ve arka plan tema uyumsuzlukları giderildi.
+   - Ana penceredeki 8 sekmenin tamamında yer alan dinamik metinler i18n altyapısına bağlandı.
+4. Test Doğrulamaları:
+   - `test_auth.py`, `test_version_policy.py`, `test_i18n_language_switching.py`, `test_ui_improvements_spinbox_preview_popout_i18n.py` dahil tüm ilgili testler başarıyla geçti.
+
+========================================================================
+[v0.2.58.31] - Splash Ekranı Sol İzohips Topoğrafyasının Akıcı ve Estetik Tasarımla Yenilenmesi (2026-09-28)
+------------------------------------------------------------------------
+KAPSAM:
+1. Sol İzohips Eğrilerinin Yeniden Tasarlanması:
+   - Kullanıcı geri bildirimi doğrultusunda, sol kenarda göze hoş gelmeyen, yapay kapalı elips/döngü ve kırık eğri parçaları tamamen kaldırıldı.
+   - Yerine sağ taraftaki doğal ve görkemli dağ sırtlarıyla tam uyumlu, yukarıdan aşağıya (y=0..400) kesintisiz uzanan 6 kademeli (Level 0..5) akıcı alp fiyort/sırt topoğrafyası getirildi.
+   - Eğriler, üst kesimde zarif bir dağ omzu, orta kesimde Serpent "S" logosuna ferah nefes alanı bırakan (~65px mesafe) doğal bir vadi/koy ve alt kesimde görkemli bir alt dağ sırtı sergileyecek şekilde parametrik olarak modellendi.
+2. Kartografik ve Geometrik Kusursuzluk:
+   - Tüm 6 yükselti kademesi kesinlikle kesişmeyen (0 intersection), eşit orantılı tabakalanmaya sahip pürüzsüz açık polilineler olarak inşa edildi (`ui/_splash_izohips_data.py`).
+   - 60 FPS sinüzoidal salınım ve tepe hareketleri yeni sol eğriler üzerinde sıfır titreme veya kırılma olmaksızın organik bir akış kazandı.
+3. Test Doğrulamaları:
+   - `tests/test_version_policy.py` ve `tests/test_splash_and_bootstrap.py` testleri 31/31 OK ile doğrulandı.
+
+========================================================================
+[v0.2.58.30] - Splash Ekranı Önyükleme İşlevlerinin Eksiksiz İadesi, İzole 60 FPS Subprocess Mimarisi ve Sinüzoidal Dalga Salınımı (2026-09-28)
+------------------------------------------------------------------------
+KAPSAM:
+1. Splash Ekranındaki Önyükleme İşlevlerinin Eksiksiz Korunması ve İadesi:
+   - Kullanıcı talimatı ve mimari kural gereğince: Splash ekranı önyükleme (preload / pre-warm) adımları (büyük boyutlu aktif proje DET0 ve RES dosyalarını okuma ve parse etme dahil) hiçbir işlev eksiltilmeden eksiksiz olarak `core/bootstrap.py` içerisine geri getirildi.
+   - Proje dokümantasyonuna ve kurallarına (`GEMINI.md`, `docs/PROJECT_STATE.md`) "Splash ekranındaki işlevler asla değiştirilmeyecektir" kuralı bağlayıcı ilke olarak eklendi.
+2. Donma/Kasma Sorununun İzole 60 FPS Subprocess ile Çözülmesi:
+   - İşlevler tam olarak çalışırken kasma problemini kökten çözmek için `main.py` içinde `SplashProcessController` devreye alındı.
+   - Splash ekranı, ana uygulamanın GIL'inden ve CPU/I-O yükünden tamamen bağımsız ayrı bir Python interpreter ve Qt döngüsünde (`ui.splash_process`) çalıştırılarak ana süreçteki 125 MB'lık dosya okuma ve arayüz inşasından %100 yalıtıldı.
+   - Böylece hem tüm büyük dosyalar eksiksiz okunur hem de splash ekranı 60 FPS kilitli akıcılıkta kalır.
+3. Sinüzoidal Çift Yönlü ve Dinamik Dalga Akışı:
+   - Dikey dalga tepeleri çok harmonikli sinüzoidal sarkaç osilasyonu ile akış sergiler: önce hızlanır, orta noktadan geçerken en yüksek hızına ulaşır, uç noktalarda yavaşlayıp durur ve ardından zarafetle ters yöne doğru hızlanarak geri akar.
+   - Tepelerin yüksekliği hareket esnasında organik ve rastgele olarak kabarıp sönümlenir.
+4. Test ve Doğrulama:
+   - `tests/test_version_policy.py` ve `tests/test_splash_and_bootstrap.py` (31/31 test OK).
+
+========================================================================
+[v0.2.58.29] - Splash Ekranında Sinüzoidal Çift Yönlü İlerleme (Hızlanma/Yavaşlama/Tersine Dönme) ve 8.8s Açılış Donmasının Kökten Giderilmesi (2026-09-28)
+------------------------------------------------------------------------
+KAPSAM:
+1. Splash Açılış Ekranındaki Donmanın Kökten Çözülmesi (8855 ms -> 6 ms):
+   - Kök Neden Analizi: `core/bootstrap.py` içindeki `_task_preload_analysis_outputs_engine` metodunun, aktif proje klasöründeki 125 MB'lık dedektör çıktısını (`ppfdetayli_det0.m`) ve sonuç dosyasını senkron olarak `SerpentDetParser` ile parse etmeye çalıştığı ve Python GIL'i tam 8.85 saniye boyunca kilitlediği tespit edildi.
+   - Çözüm: Açılış sırasında multi-megabaytlık DET0/RES parse blokajı tamamen kaldırıldı (yalnızca hafif metadata keşfine çekildi); Task 4 süresi 8855 ms'den 6.3 ms'ye indirildi.
+   - `ui/splash_screen.py`: `set_task_status` ve `_on_anim_tick` içine `self.repaint()` mantığı entegre edildi; ana thread arayüz kurarken aradaki `app.processEvents()` anında ekranı tazeleyerek çizim açlığını (paint starvation) önledi.
+   - `ui/main_window.py`: `setup_dock_widgets` içine `processEvents` nefes alma noktaları eklendi.
+2. Sinüzoidal ve Ters Yöne Dönen (Harmonic Reversible) Dalga Akışı:
+   - Dikey eksendeki tepe akışı aşırı hızlı tek yönlü akıştan arındırıldı; çok harmonikli sinüzoidal sarkaç salınımı modeline bağlandı (`_sin_amp1`, `_sin_freq1`, `_sin_amp2`, `_sin_freq2`).
+   - Dalga tepeleri önce hızlanır, orta noktadan geçerken en yüksek hızına ulaşır, uç noktalara doğru yavaşlayıp durma noktasına gelir ve ardından zarafetle ters yöne doğru hızlanarak geri akar.
+   - Tepelerin yüksekliği hareket esnasında organik olarak kabarıp sönümlenir, dönüm noktalarında genlikleri nefes alır.
+3. Test ve Doğrulama:
+   - `tests/test_splash_and_bootstrap.py` güncellenerek sinüzoidal reversible akış ve 8.8s donma onarımı doğrulandı (30/30 test OK).
+
+========================================================================
+[v0.2.58.28] - Splash Ekranında Dikey Doğrultuda Değişken Hızlarda İlerleyen ve Dinamik/Rastgele Yüksekliği Değişen Gezici Tepeler (2026-09-28)
+------------------------------------------------------------------------
+KAPSAM:
+1. Splash Ekranında Dikey Doğrultuda Hareket Eden Gezici Tepeler (Traveling Peaks Along Vertical Axis):
+   - `ui/splash_screen.py`: İzohips kontur çizgileri üzerinde dikey eksen (y ekseni) boyunca akıcı şekilde ilerleyen gezici dalga tepeleri (`_peak_direction`, `_peak_base_speed`, `_peak_spatial_freq`) geliştirildi.
+   - Tepeler dikey eksende tekdüze sabit hız yerine, dikey konuma ve zamana bağlı değişken hız modülasyonu (`_speed_mod_freq`, `_speed_mod_rate`, `_speed_mod_amp`, `_speed_mod_phase`) ile doğrultu boyunca ivmelenip yavaşlayarak canlı ve dinamik bir plazma/akı akışı kazandı.
+2. Hareket Ederken Tepelerin Yüksekliklerinin (Genliklerinin) Dinamik ve Rastgele Değişimi:
+   - Tepeler dikey doğrultuda ilerlerken x eksenindeki tepe yükseklikleri (amplitüdleri) sabit kalmayıp dinamik ve stokastik olarak modüle edildi (`_peak_base_height`, `_peak_height_speed1`, `_peak_height_speed2`, `_peak_height_fluctuation`).
+   - Tepeler dikeyde yolculuk ederken organik bir şekilde kabarıp sönümlenir, nefes alır ve dalga boyları boyunca büyüklükleri farklılaşır.
+   - Hem seyahat hızı hem de yükseklik değişimi her oturumda (`rng.uniform`) ve çalışma anında çok frekanslı harmoniklerle rastgele üretilir.
+   - Kapalı zirve tepesi halkası (Lvl 5) ve zirve doruk noktası da aynı tepe dalgasıyla senkronize olarak dikeyde hareket eder ve tepe yükseldikçe halka ölçeği nefes alır gibi genişleyip daralır (`loop_scale`).
+3. Test ve Doğrulama:
+   - `tests/test_splash_and_bootstrap.py` içine yeni `test_splash_traveling_peaks_random_speed_and_height` testi eklenerek gezici tepe parametreleri, hız değişkenliği, yükseklik dalgalanması ve render kararlılığı %100 doğrulandı (30/30 test OK).
+
+========================================================================
+[v0.2.58.27] - Tam Ekran Sağa Uzama Onarımı (FlowLayout & TH Scroll Wrapper), Dark/Light Mod Geçiş Akıcılığı ve Splash Ekranı Kesintisiz Dalga Kapanışı (2026-09-28)
+------------------------------------------------------------------------
+KAPSAM:
+1. Tam Ekrandayken Pencerenin Sağa Doğru Uzaması ve Taşmasının Giderilmesi:
+   - Kök Neden A (3017px Isotopic Inventory Etiketleri): `Isotopic Inventory Settings (set inv)` sekmesindeki 25 izotop etiketinin tek satırda yan yana dizilerek `minimumSizeHint`'i 3017 piksele şişirdiği tespit edildi. Yeni `FlowLayout` mimarisi (`ui/flow_layout.py`) geliştirilerek etiketlerin pencere genişliğine göre alt satırlara otomatik akması (wrap) sağlandı; bileşenin minimum genişliği 3017px'ten 142px'e düşürüldü.
+   - Kök Neden B (1391px TH Header & 1245px Scenario Bar): `THTemplatePage` içindeki 10 butonlu `header_frame` ve `scenario_bar` bileşenleri `QScrollArea` tamponları içine alındı; `THTemplatePage` minimum genişliği 1403px'ten 880px'e, `MainWindow` minimum genişliği ise 1625px'ten 1190px'e indirildi.
+   - `rebalance_editor_splitter` katsayı dengesi ve `restore_ui_preferences` içinde tema değişmediğinde gereksiz `set_dark_mode` tetiklenmesi önlenerek splitter kaymaları kesin olarak çözüldü.
+2. Aydınlık / Karanlık Mod (Dark/Light) Tema Geçişinde Akıcılık:
+   - Tema değiştirme butonuna basıldığında overlay ışıma animasyonu derhal (<2ms) başlatılır; 700-1000ms süren ağır stil ve selector hesaplamaları `QTimer.singleShot(15, ...)` ile bir sonraki tick'e bırakılarak overlay'in altında yürütülür, butona basıldığı andaki 1 saniyelik donma tamamen ortadan kaldırıldı.
+   - `ui/theme_transition.py`: `paintEvent` içinde 1:1 çizimde gereksiz CPU bilinear resampling yapan `SmoothPixmapTransform` kaldırıldı, donanım hızında bellek blit (XCopyArea) sağlandı.
+   - Spinbox güncellemesinde tüm widget ağacını gezen gereksiz `findChildren` araması kaldırıldı; `update_all_modern_spinboxes` tekil optimize çağrıya bağlandı.
+   - `_on_transition_finished` ve `_apply_central_tabs_theme` içine silinmiş widget erişimlerini engelleyen güvenlik korumaları eklendi.
+3. Splash Ekranı İlerleme ve Kapanış Donmasının Giderilmesi:
+   - `ui/splash_screen.py`: Kapanış animasyonunda (`_is_closing`) izohips dalgalarının, nefes alma ve ışıma fazlarının donması engellendi; dalgalar ve parıltı delta-time ile kapanış süresince kesintisiz olarak akmaya devam eder.
+   - `start_close_animation` çağrıldığında hedef progress %100'e tamamlanır; ilerleme çubuğu %100'e organik biçimde ulaşır.
+   - Kapanış fadeout adımı 0.25'ten 0.08'e yumuşatılarak ~200-250ms ipeksi bir kapanış sağlandı.
+   - `MainWindow.__init__` ve `_apply_imported_data_impl` içerisindeki ağır parser/geometri kurulum adımları arasına `_report()` ve `processEvents()` serpiştirilerek Qt olay döngüsü nefeslendirildi.
+4. Test ve Doğrulama:
+   - `tests/test_ui_stabilization.py` (6 test), `tests/test_splash_and_bootstrap.py` (22 test), `tests/test_i18n_language_switching.py` (6 test), `tests/test_version_policy.py` (8 test) ve `tests/test_accessibility_and_color_blindness.py` (21 test) olmak üzere tüm testler %100 başarıyla doğrulandı.
+
+========================================================================
+[v0.2.58.26] - Thermal-Hydraulics, Mapper, Preflight, Konsol ve Malzeme Arayüzlerinde Eksiksiz Çift Dilli (i18n) Yerelleştirme ve Dinamik Dil Geçişi (2026-09-28)
+------------------------------------------------------------------------
+KAPSAM:
+1. Core ID & CRS Manual Mapper İki Dilli Yerelleştirme (ui/th_manual_mapper_dialog.py, core/i18n.py):
+   - Mapper başlığı, açıklama paneli, kılavuz bilgisi, eylem butonları (Otomatik Öneri, Çekirdek Simetrisi, Sığdır, Tümünü Seç, Seçimi Temizle, Seçime Uygula, Aynı ID'leri Seç, İptal, Tümünü Uygula) ve grup kutuları (İnceleme & Haritalama, Malzeme Özeti, Kontrol Çubuğu Özeti) tam iki dilli yapıldı.
+   - Durum çubuğu bildirimleri, kontrol çubuğu banka tablosu başlıkları ve QMessageBox hata/uyarı diyalogları i18n sistemine bağlandı.
+   - retranslate_ui() ve dinamik dil dinleyicileri (i18n.add_listener / remove_listener) eklendi.
+2. Thermal-Hydraulics Şablon Stüdyosu Buton ve Araç İpuçları (ui/th_template_page.py, ui/th_bundle_tree.py):
+   - 'btn_manual_id' buton metni ve araç ipucu ('th_manual_mapper_tooltip') dinamik çeviriye bağlandı; retranslate_ui() içine eklendi.
+   - Ağaç gezgini butonları ve başlıkları dinamik dil değişimine bağlandı.
+3. Ön Uçuş (Preflight) ve Denetim Paneli Tam Çevirisi (ui/preflight_panel.py, core/i18n.py):
+   - Başlık, Yeniden Çalıştır (Rerun), Raporu Kopyala (Copy), Ayrı Pencere / Geri Yerleştir (Popout / Reattach) butonları ve araç ipuçları i18n'e bağlandı.
+   - Ağaç başlıkları ('Önem / Severity', 'Kaynak / Source', 'Bulgu / Finding', 'Önerilen Eylem / Suggested action'), kopyalanan rapor formatı ve durum rozetleri iki dilli hale getirildi.
+   - Dinamik dil dinleyicisi ve retranslate_ui() eklendi.
+4. Alt Notebook Konsolu, Filtre Butonları ve Arama Çubuğu (ui/main_window.py, core/i18n.py):
+   - Alt notebook sekme başlıkları ('Konsol' / 'Console', 'Ön Uçuş Sonuçları' / 'Preflight Results') dinamik dil değişimine bağlandı.
+   - Konsol filtre butonları ('Tümü' / 'All', 'Başarılı' / 'Success', 'Uyarı' / 'Warning', 'Hata' / 'Error'), kilit rozeti, temizle, kopyala, ara butonları ve arama kutusu yerelleştirildi; sayaç rozetleri güncellendiğinde dil metnini koruyan dinamik yapı kuruldu.
+5. Malzeme Sekmesi Termal Saçılma Modu (ui/main_window.py, core/i18n.py):
+   - Termal saçılma (S(alpha, beta)) görünümüne geçişte başlık, alt başlık, arama kutusu ve geçiş butonları iki dilli olarak dinamik bağlandı.
+6. Test ve Doğrulama:
+   - tests/test_i18n_language_switching.py dosyasına Thermal-Hydraulics, Mapper, Preflight paneli ve alt konsol için 2 yeni kapsamlı birim test eklendi (toplam 6 test eksiksiz geçti).
+   - tests/test_version_policy.py ile 4 kademeli sürüm politikası doğrulandı.
+
+========================================================================
+[v0.2.58.25] - Kapsamlı Arayüz Yerelleştirmesi (i18n), Boyut/Spinbox/Çıktı Etiketleri ve Sadeleştirilmiş Dil Menüsü (2026-09-27)
+------------------------------------------------------------------------
+KAPSAM:
+1. Sadeleştirilmiş ve Doğrudan Erişilebilir Dil Menüsü (ui/main_window.py):
+   - 'Erişilebilirlik' ve 'Görünüm' menüleri altındaki ara 'Mevcut Diller' (Available Languages) alt menüsü kaldırıldı.
+   - 'Dil' (Language) menüsü açıldığında doğrudan aktif diller (English, Türkçe) birbirini dışlayan radyo tarzı eylemlerle listelenir.
+2. Spinbox ve Geometri Boyut Terimlerinin Tamamı Dile Bağımlı Hale Getirildi (core/i18n.py, ui/main_window.py):
+   - Çizim ayarlarındaki 'Width:' / 'Genişlik:', 'Height:' / 'Yükseklik:', 'Min X:', 'Max X:', 'Min Y:', 'Max Y:', 'Nx Bins:', 'Ny Bins:' etiketleri i18n sistemine bağlandı.
+   - Reaktör kalbi editöründeki 'Height Z (cm):' / 'Yükseklik Z (cm):', 'Pitch (cm):' / 'Adım (cm):', 'Grid (NxN):' / 'Izgara (NxN):', 'Universe ID:', 'Core Shape:', 'View Mode:', 'Radial Reflector Preset:', 'Boundary Shape:', 'Radial/Axial Thick (cm):' etiketleri dile dinamik bağlandı.
+   - Yakıt demeti editöründeki 'Select Assembly:', 'Assembly Name / Alias:', 'Pin Pitch (cm):' / 'Pin Adımı (cm):', 'Active Pin Palette:', 'Define Pin Parameters', 'Assembly Specifications & Breakdown:' etiketleri ve tablo başlıkları dinamik bağlandı.
+   - Çalıştırma ayarlarındaki form satır etiketleri (Cross-Section Library, Total Thermal Power, OpenMP Parallel Cores, X/Y/Z Boundary Conditions, Neutrons per Cycle, Active/Inactive Cycles, Optimization Level) 'QFormLayout.labelForField' helper metodu ile çalışma anında anında çevrilir.
+3. Analiz Çıktıları ve Spektrum Bilgi Paneli Çevirisi (ui/analysis_outputs.py, ui/spectrum_info_widget.py):
+   - Analiz Çıktıları sayfasındaki tüm butonlar (Lineer/Logaritmik, Yeniden Oynat, Ölçüm, Gradyan, Ayrı Pencere, PNG Aktar, Yenile, Grafiği Buraya Sabitle), kenar çubuğu bölüm başlıkları, tespit edilen dosyalar ağacı, özet metrikler ve tanı başlıkları i18n altyapısına bağlandı; sayfa 'retranslate_ui' metodu ve dinleyici ile donatıldı.
+   - Nükleer spektrum panelindeki 4 KPI kartı (Termal, Epitermal, Hızlı, F/T Sertlik), rehber açma/kapama butonu ve 3 sekme başlığı çalışma anında dinamik olarak Türkçeleştirildi.
+4. Test ve Doğrulama:
+   - tests/test_i18n_language_switching.py test paketi güncellendi; doğrudan dil menüsü hiyerarşisi, boyut etiketleri ve Analiz Çıktıları dinamik çevirisi dahil tüm testler başarıyla geçti (4/4 test OK).
+   - tests/test_radar_and_code_minimap.py ve tests/test_version_policy.py testleri sıfır regresyonla doğrulandı.
+
+========================================================================
+[v0.2.58.24] - Serpent Studio Çoklu Dil Desteği: Türkçe (TR) ve İngilizce (EN) Canlı Dil Değiştirme (2026-09-27)
+------------------------------------------------------------------------
+KAPSAM:
+1. Kapsamlı Uluslararasılaşma ve Yerelleştirme Altyapısı (core/i18n.py):
+   - I18nManager sınıfı dinamik dinleyici (listener) mimarisi, fallback mekanizması ve parametrik metin biçimlendirme desteğiyle genişletildi.
+   - Tüm ana sekmeler (Malzeme, Demet, Kalp, Kontrol Çubuğu, Dedektör, Katsayı, Çalıştırma, Çizim), menüler (Dosya, Düzenle, Görünüm, Araçlar, Erişilebilirlik, Yardım), aksiyonlar, geometri/tuval kontrolleri, durum mesajları ve mini harita HUD arayüzü için eksiksiz Türkçe ("tr") ve İngilizce ("en") sözlükleri tanımlandı.
+   - Modül düzeyinde 'tr(key, default, **kwargs)' kolaylık fonksiyonu ve 'AVAILABLE_LANGUAGES' veri yapısı sunuldu.
+2. View ve Accessibility Menülerinde Dil Dalı ve Canlı Geçiş (ui/main_window.py):
+   - Kullanıcı talebi doğrultusunda hem 'View' hem de 'Accessibility' menülerine 'Language -> Available Languages' (Dil -> Mevcut Diller) dalı eklendi.
+   - Alt dalda 'English' ve 'Türkçe' seçenekleri özel QActionGroup ile birbirini dışlayan (exclusive checkable) şekilde yerleştirildi.
+   - Dil seçimi QSettings ('general/language') üzerinden otomatik kaydedilir ve uygulama açılışında geri yüklenir.
+   - Dil değiştirildiğinde 'retranslate_ui()' fonksiyonu pencere başlığını, tüm menü ve alt menü başlıklarını, menü aksiyonlarını, 8 ana sekmeyi, demet ve kalp kontrol kutularını ve mini haritaları anında canlı olarak yeniden çevirir; durum çubuğunda bildirim gösterilir.
+3. Mini Haritalar ve Popout Bileşenlerinde Çoklu Dil Entegrasyonu (ui/code_minimap.py, ui/canvas_radar_minimap.py):
+   - Kod mini haritasında 'Main Deck' / 'Ana Betik', 'Includes' / 'İçerikler', sağ tık menüsündeki 'Jump to Next Change', 'Scroll to Top/Bottom', 'Hide Minimap' etiketleri i18n altyapısına bağlandı.
+   - Radar minimap'te HUD başlığı ('🗺️ Core Map' / '🗺️ Kalp Haritası'), durum etiketi ('● LIVE' / '● CANLI') ve köşe/küçültme araç ipuçları dil değişimine bağlandı.
+4. Test ve Doğrulama:
+   - tests/test_i18n_language_switching.py test paketi yazılarak I18nManager, dil değiştirme, QSettings kalıcılığı, menü ve sekme dinamik çevirileri uçtan uca doğrulandı (3/3 test geçti).
+   - tests/test_radar_and_code_minimap.py regresyon testleri çalıştırıldı (6/6 test geçti).
+
+========================================================================
+[v0.2.57.24] - Core Minimap Sol-Alt Konumlandırma & Temiz Geometri Çizimi, Kod Mini Haritası Satır Üzeri Doğrudan Renkli Diff Vurgusu (2026-09-27)
+------------------------------------------------------------------------
+KAPSAM:
+1. Core Minimap Sol-Alt Konumlandırma ve Durum Çubuğu Güvenlik Aralığı:
+   - Kullanıcı talebi doğrultusunda mini harita yeniden sol alt (Bottom-Left) köşeye taşındı.
+   - Sol altta yer alan demet/pin özellik şeridiyle (`CanvasPropertyPanel` / `hover_panel`) çakışma sorunu çözüldü: `reposition()` fonksiyonu özellik panelinin yüksekliğini dinamik olarak hesaplayarak minimap'i çubuğun tam üzerinde 10px güvenlik boşluğuyla konumlandırır; özellik paneli asla kapanmaz.
+   - Core Minimap çizimindeki metin uyuşmazlığı giderildi: `_render_scene_thumbnail` sırasında sahnedeki devasa simple text etiketleri gizlenerek minyatür haritanın saf, net ve kristal berraklığında reaktör geometri ve malzeme renkleriyle çizilmesi sağlandı.
+   - Boyutlar daha kompakt ve zarif hale getirildi (185x185 px).
+2. Kod Mini Haritasında Satır İçi Doğrudan Renkli Diff Vurgusu:
+   - Başlıktaki diff etiketi (`[ 2 diff ▾ ]`) tamamen kaldırıldı; değişiklikler kullanıcı talebine uygun şekilde doğrudan kod satırlarının üzerinde gösterildi.
+   - Değiştirilen veya eklenen satırların kod çubukları doğrudan parlak kehribar/altın sarısı (`#F59E0B` / `#D97706`) renkle ve satır boyu arka plan ışımasıyla boyanarak belgedeki tüm değişiklikler mini haritada tek bakışta belirgin kılındı.
+3. Test ve Doğrulama:
+   - tests/test_radar_and_code_minimap.py içerisindeki sol-alt konumlandırma ve satır içi diff kontrolleri güncellendi; tüm testler başarıyla geçti.
+
+========================================================================
+[v0.2.57.23] - Kod Mini Haritası Değişiklik/Diff Göstergeleri (Change Gutter) & Tam İngilizce Arayüz Yerelleştirmesi (2026-09-27)
+------------------------------------------------------------------------
+KAPSAM:
+1. Kod Mini Haritası Canlı Değişiklik/Diff Vurgusu (Change Gutter Indicators):
+   - Belgede yapılan düzenleme, ekleme ve değişiklikler mini harita sol kenar boşluğunda (gutter) 3.5px genişliğinde parlak camgöbeği/mavi şeritler (`#38BDF8` / `#0284C7`) ve satır arka plan parlamasıyla belirginleştirildi.
+   - Editörde hem manuel yazma/düzenleme (`_saved_text` diff karşılaştırması) hem de model/kart senkronizasyonu (`changed_lines`) üzerinden değişen satırlar gerçek zamanlı tespit edilir.
+   - Mini harita başlığına dinamik değişiklik sayacı rozeti (`[ {N} diff ▾ ]`) eklendi; tıklandığında imleci doğrudan belgedeki bir sonraki değiştirilen satıra taşır ve görünümün merkezine odaklar.
+   - Sağ tık menüsüne '⚡ Jump to Next Change' aksiyonu eklendi.
+2. Tam İngilizce Arayüz Yerelleştirmesi (English UI Standardization):
+   - Kod mini haritası ve taktiksel oyun haritasındaki tüm Türkçe kullanıcı arayüzü metinleri ve menü etiketleri projenin standart İngilizce diline çevrildi:
+     * 'Ana Betik' ➔ 'Main Deck'
+     * 'Alt Betikler' ➔ 'Sub-scripts' / 'Includes'
+     * 'Alt: ...' ➔ 'Inc: ...'
+     * 'Bu dosyada alt betik (include) bulunmuyor.' ➔ 'No include files found in this deck.'
+     * 'Toplam {N} Alt Betik' ➔ 'Total {N} Include Files'
+     * 'Satır {N}' ➔ 'Line {N}'
+3. Test ve Doğrulama:
+   - tests/test_radar_and_code_minimap.py içerisine diff satır takibi ve sonraki değişikliğe zıplama birim testleri eklendi; 6/6 test başarıyla geçti.
+
+========================================================================
+[v0.2.57.22] - Taktiksel Oyun Minimap Revizyonu (Sağ-Üst Konumlandırma) & Kod Mini Haritası 1:1 Scrollbar & Alt Betik (Include) Entegrasyonu (2026-09-27)
+------------------------------------------------------------------------
+KAPSAM:
+1. Taktiksel Oyun Minimap (Game Minimap) Formatı ve Konumlandırma Revizyonu:
+   - Dairesel sonar radar formatı yerine oyun standartlarında (RTS/taktiksel strateji) temiz, dikdörtgen HUD çerçeveli taktiksel mini harita arayüzüne geçildi.
+   - Sol alt köşedeki demet/pin özellik çubuğunun (hover panel) önünü kapatma sorunu çözüldü: Minimap varsayılan olarak oyunlardaki gibi Sağ-Üst (Top-Right) köşeye taşındı.
+   - 4 köşeli dinamik konum değiştirici buton ('⤢') eklendi: Sağ-Üst, Sol-Üst, Sağ-Alt, Sol-Alt arasında tek tıkla döngüsel geçiş imkanı sağlandı.
+   - Alt köşeler seçildiğinde alt durum çubuğunun yüksekliği (hover_panel) otomatik algılanarak çubuğun tam üzerinde güvenle konumlanması sağlandı.
+   - Hedefleme göstergesi dairesel sonar dalgası yerine oyun tarzı 4 köşeli askeri hedef braketleri ('[ ]') ve merkez kehribar/cyan hedefleme artısı ile yenilendi.
+   - Popout pencerelerindeki buton metni '🗺️ Minimap' olarak güncellendi.
+2. Serpent Kod Mini Haritası (Code Minimap) 1:1 Scrollbar ve Alt Betik (Include) Entegrasyonu:
+   - Scrollbar ile senkronizasyon sorunu giderildi: Viewport slider konumu ve hareketi dikey scrollbar'ın (QScrollBar) değer ve aralığıyla birebir (1:1) matematiksel orana bağlandı.
+   - Sayfa yüksekliğini aşan çok uzun dosyalarda (1000+ satır) dikey sanal kaydırma (virtual scrolling) motoru uygulanarak slider'ın donması/takılması engellendi; belgenin en üstünden en altına kadar kesintisiz kaydırma sağlandı.
+   - Mini harita, dikey scrollbar'ın üzerine binmeyecek şekilde scrollbar genişliği (vbar_w) düşülerek yanına konumlandırıldı.
+   - 'Alt Betikler' (Include Dosyaları) Görselleştirildi: Kod içerisindeki tüm 'include' satırları mor/menekşe renkli özel vurgu çizgileri, dosya adı etiketleri ('▸ fuel.inp') ve sol kenar çentiğiyle görünür kılındı.
+   - Mini haritanın üst kısmına 'Ana Betik' / 'Alt Betik' durum başlığı, toplam alt betik sayacı ('3 inc') ve tek tıkla tüm alt betikleri listeleyip satıra zıplatan / dosyayı açan açılır menü entegre edildi.
+   - Kaydırma sırasında geçerli kart ve blok adını gösteren yapışkan kapsam göstergesi ('📍 pin 1', '📍 lat 10' vb.) eklenerek bağlam kaybı önlendi.
+3. Test ve Doğrulama:
+   - tests/test_radar_and_code_minimap.py ve tests/test_canvas_popout.py testleri yeni köşe geçişleri, alt betik algılama ve 1:1 kaydırma senaryoları ile %100 doğrulandı.
+
+========================================================================
+[v0.2.57.21] - Popout Taktiksel Radar Minimap & Serpent Kod Editörü Mini Haritası (Code Minimap) Entegrasyonu (2026-09-27)
+------------------------------------------------------------------------
+KAPSAM:
+1. Popout Pencereleri İçin Taktiksel Radar Minimap (Yeni Görsel & Gezinme Yeteneği):
+   - Popout (Core, Assembly ve TH Canvas) pencerelerinde RTS/oyun tarzı sol altta konuşlanan HUD temalı 'CanvasRadarMinimap' bileşeni geliştirildi (ui/canvas_radar_minimap.py).
+   - Tam reaktör kor / demet geometrisini minyatür olarak önbellekleyip (scene.render) menzil halkaları, artı eksen çizgileri ve pusula yön göstergeleriyle (N/S/E/W) sunar.
+   - Gerçek zamanlı kamera görüş alanı çerçevesi (frustum / viewport rect) ve taktiksel L-köşe askeri HUD braketleri eklendi.
+   - Canlı imleç / hover hedef takibi: Kullanıcının ana tuvalde üzerinde gezindiği pin veya demeti minyatür üzerinde kehribar/cyan hedef artısı, sonar dalgası animasyonu ve HUD alt bilgi etiketiyle (ör. 'Pin: UO2_375 (3,4)', 'Assy: A1R1 (5,7)') vurgular.
+   - İnteraktif Gezinme: Minimap üzerine sol tık veya sürükleme ile ana tuvalin merkezini ilgili koordinata odaklar (centerOn), çift tıklama ile sahneyi sığdırır (fitInView).
+   - Katlanabilir / genişletilebilir panel ('—' / '+') ve canlı durum ledi ('● LIVE') barındırır; popout pencere başlığındaki '📡 Radar' butonu ile açılıp kapatılabilir.
+   - GLOBAL_ANIMATION_CONFIG.reduced_motion ve 'accessibility/stop_animations' erişilebilirlik tercihlerine tam uyum sağlar (sonar dalga animasyonunu otomatik duraklatır).
+2. Serpent Kod Editörü Mini Haritası (Code Minimap) (Yeni Düzenleyici Yeteneği):
+   - Serpent kod editörünün (CodeEditor) sağ tarafında dikey uzanan 'CodeMinimapArea' bileşeni geliştirildi (ui/code_minimap.py).
+   - Belgenin sözdizimini (yorum '%', anahtar sözcükler 'mat'/'pin'/'lat'/'surf'/'cell'/'set'/'det', sayılar ve metin blokları) renk kodlu minyatür çizgilerle önbellekli olarak çizer.
+   - Yarı saydam hareketli viewport slider kutusu ile tıklama veya sürükleme yapılarak belgenin istenen satırına anında kaydırma sağlar.
+   - Fare tekerleği desteği, sağ tık bağlam menüsü ('Scroll to Top/Bottom', 'Hide Minimap') ve View menüsünden 'Ctrl+M' kısayoluyla görünürlük açma/kapatma entegrasyonu sağlandı.
+3. Test ve Doğrulama:
+   - tests/test_radar_and_code_minimap.py ile 6 adet birim ve entegrasyon testi yazıldı ve tüm regresyon testleriyle birlikte başarıyla doğrulandı.
+
+========================================================================
+[v0.2.56.21] - Enerji Spektrumu & Letargy Analiz Modülü, Popout Kenetlenme & F11 Onarımı, Dinamik Include Keşfi ve Araç Çubuğu Revizyonu (2026-09-27)
+------------------------------------------------------------------------
+KAPSAM:
+1. Enerji Spektrumu & Letargy Analizi (Yeni Analiz Yeteneği):
+   - Analysis Outputs sekmesine 'Energy Spectrum (Lethargy)' analiz motoru eklendi.
+   - Nükleer fizik teorisi, Serpent wiki sözdizimi ve letargy diferansiyel matematiği içeren 3 sekmeli zengin rehber paneli entegre edildi.
+   - Enerji akısı, letargy başına akı, termal/epitermal/hızlı akı kırılımı ve tepe noktası tespiti desteklendi.
+2. Popout Kenetlenme (Dock Back) & F11 Kısayolu İyileştirmesi:
+   - Analiz çıktılarında grafik popout yapılıp 'Dock Back' veya Escape ile geri kenetlendiğinde doğrudan orijinal canvas_container yuvasına yerleşmesi sağlandı; dikey ve yatay splitter düzeni bozulmaz.
+   - F11 kısayolu popout ve dock back arasında çift yönlü geçiş yapacak şekilde bağlandı.
+3. Summary Metrics & Diagnostics Göstergelerinin Korunması:
+   - Letargy/Spektrum analizinden diğer analizlere (PPF, Burnup vb.) geçişte veya sıfırlamada results_vertical_splitter ve details_splitter boyutları [540, 220] ve [500, 360] olarak otomatik geri yüklenerek teşhis ağaçlarının ezilmesi engellendi.
+4. Stop All Animations & Tema Geçişi Onarımı:
+   - 'Stop all animations' seçilip kaldırıldıktan sonra QSettings boolean ayrıştırması ve _enable_animations bayrağı düzeltilerek aydınlık/karanlık mod radyan dalga animasyonunun tekrar çalışması sağlandı.
+5. Assembly Canvas Konforlu Sığdırma (Fit Scale):
+   - Assembly canvas sığdırma ölçeği 1.08'den 1.28'e yükseltilerek yakıt kafesinin görünürlüğü ve doluluğu artırıldı.
+6. Workspace Toolbar İkon Kontrastı & Araç Çubuğu Temizliği:
+   - Workspace butonu seçili/aktifken mavi arka plan üzerinde görünür kalması için çift durumlu vektörel ikon (QIcon.State.On = #FFFFFF beyaz) üretildi.
+   - Üst banttan New Input, Import File, Save Input, Save As... ve Snapshots butonları kaldırıldı; bu işlevler File menüsünde kısayollarıyla korundu.
+7. Dinamik Include Algılama & Boşluklu/Tırnaklı Yol Desteği:
+   - Input Preview başlığındaki include listesi, ana betikte bulunan ve çalışma alanında (workspace) yer alan dosyaları otomatik olarak tespit eder.
+   - Tırnak içi boşluklu yollar (örn. 'Base Condition/reflector.txt') desteklendi; 'Browse...' seçeneği tamamen kaldırılarak yalnızca gerçek include bağı olan dosyalar listelendi.
+
+DOĞRULAMA:
+- tests/test_version_policy.py, tests/test_ui_refinements_session.py, tests/test_include_discovery_combo.py, tests/test_canvas_popout.py, tests/test_energy_spectrum.py ve tests/test_dark_mode.py ile tam doğrulama sağlandı.
 
 ========================================================================
 [v0.2.55.18] - Serpent Syntax Preview Kayan Ctrl+F Arama & Değiştirme, Akıllı Include Önizlemesi ve Fontconfig Kararlılık Koruması (2026-09-24)

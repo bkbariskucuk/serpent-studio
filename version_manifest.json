@@ -1,12 +1,12 @@
 {
-  "latest_version": "v0.2.55.18",
+  "latest_version": "v0.2.59.32",
   "min_supported_version": "v0.2.50.00",
   "mandatory": false,
-  "release_date": "2026-09-24",
-  "release_title": "Serpent Studio v0.2.55.18",
-  "release_notes": "Serpent Syntax Preview Floating Search & Replace, Smart Include Resolution, and Fontconfig / Signal Crash Prevention",
-  "sha256": "4944bb3828df3c2736270dc320197b153c2d8294cd395c02a5fb151cc1187905",
-  "file_size_bytes": 139647480,
-  "download_url": "https://github.com/bkbariskucuk/serpent-studio/releases/download/v0.2.55.18/SerpentStudio-x86_64.AppImage",
-  "zsync_url": "https://github.com/bkbariskucuk/serpent-studio/releases/download/v0.2.55.18/SerpentStudio-x86_64.AppImage.zsync"
+  "release_date": "2026-09-30",
+  "release_title": "Serpent Studio v0.2.59.32",
+  "release_notes": "Release v0.2.59.32: Çevrimdışı Kimlik Doğrulama Güvenliği, Altıgen Kafes Çizim Restorasyonu ve Arayüz İyileştirmeleri",
+  "sha256": "c647900e1607d896a9134604dd59b976e768e4eab963897e8bd642d4c88b0cf1",
+  "file_size_bytes": 140356088,
+  "download_url": "https://github.com/bkbariskucuk/serpent-studio/releases/download/v0.2.59.32/SerpentStudio-x86_64.AppImage",
+  "zsync_url": "https://github.com/bkbariskucuk/serpent-studio/releases/download/v0.2.59.32/SerpentStudio-x86_64.AppImage.zsync"
 }

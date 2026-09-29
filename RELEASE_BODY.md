@@ -1,4 +1,4 @@
-# Serpent Studio v0.2.55.18
+# Serpent Studio v0.2.59.32
 
 > Advanced Graphical User Interface, Interactive Core Geometry Visualizer, and Analytical Post-Processing Platform for **Serpent 2 Monte Carlo** Reactor Physics.
 
@@ -8,7 +8,7 @@
 
 > [!IMPORTANT]
 > **Tek İndirmeniz Gereken Dosya / Only File You Need:**  
-> 👉 [**`SerpentStudio-x86_64.AppImage`**](https://github.com/bkbariskucuk/serpent-studio/releases/download/v0.2.55.18/SerpentStudio-x86_64.AppImage) (~132 MB)
+> 👉 [**`SerpentStudio-x86_64.AppImage`**](https://github.com/bkbariskucuk/serpent-studio/releases/download/v0.2.59.32/SerpentStudio-x86_64.AppImage) (~132 MB)
 
 #### 🚀 Nasıl Çalıştırılır? / Quick Start:
 1. **İzin Verin:** Dosyaya sağ tıklayın -> *Özellikler* -> *İzinler* -> *"Dosyayı program gibi çalıştırmaya izin ver"* seçeneğini işaretleyin.  
@@ -21,50 +21,43 @@
 ### 📦 Dosya Açıklamaları (Assets Guide)
 
 | Dosya Adı | Boyut | Açıklama | Kullanıcı İndirmeli mi? |
-| :--- | :--- | :--- | :---: |
+| :--- | :--- | :--- | :--- |
 | 🟢 **`SerpentStudio-x86_64.AppImage`** | **~132 MB** | **Ana çalıştırılabilir uygulama paketi** | **EVET (Tek gerekli dosya)** |
-| ⚙️ `SerpentStudio-x86_64.AppImage.zsync` | ~230 KB | **Delta Güncelleme Haritası:** Uygulama içi otomatik güncelleyicinin yeni sürümlerde sadece değişen parçaları (~2-5 MB) indirmesini sağlar. | Otomatik (Uygulama kullanır) |
+| ⚙️ `SerpentStudio-x86_64.AppImage.zsync` | ~230 KB | **Delta Güncelleme Haritası:** Uygulama içi otomatik güncelleyicinin yeni sürümlerde sadece değişen parçaları indirmesini sağlar. | Otomatik (Uygulama kullanır) |
 | 📋 `version_manifest.json` | 652 B | **Sürüm Kontrol Metaverisi:** Uygulamanın menüsündeki *"Check for Updates..."* butonu için canlı sürüm bilgisi. | Otomatik (Uygulama kullanır) |
 
 ---
 
-### 🌟 Bu Sürümde Neler Yeni? (Release Notes - v0.2.55.18)
+### 🌟 Bu Sürümde Neler Yeni? (Release Notes - v0.2.59.32)
 
-#### 1. 🔍 Serpent Syntax Preview Kayan Ctrl+F Arama & Değiştirme Çubuğu (Floating Search & Replace)
-- **Zarif & Sayfa Mizanpajını Bozmayan Overlay:** Kod editörünün üzerine doğrudan binen, gölgeli (`QGraphicsDropShadowEffect`) ve modern yuvarlatılmış köşeli kart görünümü.
-- **Canlı Eşleşme Sayacı:** Toplam ve aktif eşleşmeyi anlık gösteren gösterge (`1 / 4`, `No results`).
-- **Pürüzsüz Gezinme:** Önceki (`▲` / `Shift+Enter`) ve sonraki (`▼` / `Enter`) eşleşmelere hızlı sıçrama.
-- **Gelişmiş Arama Filtreleri:** Büyük/küçük harf duyarlılığı (`Aa`), tam kelime (`\b`) ve düzenli ifade (`.*`) desteği.
-- **Zarif Bul & Değiştir Paneli:** `Ctrl+H` veya `⇄` butonuyla açılan entegre değiştirme paneli (Replace / Replace All).
-- **Akıllı Odak ve Escape İle Kapatma:** Seçili metni otomatik arama kutusuna alma, `Esc` ile kapatıp odağı hemen kod editörüne döndürme, kısayol çakışmalarının temizlenmesi.
+#### 1. 🛡️ Çevrimdışı Kimlik Doğrulama Güvenliği & Özel Yerel Hesap (Offline Auth Overhaul)
+- **Eski Hesapların Temizlenmesi:** Önceki genel çevrimdışı kullanıcı hesapları (`admin`, `baris`) ve varsayılan parolaları sistemden tamamen kaldırıldı.
+- **Özel Yetkili Yerel Hesap:** Yerel yetkili kullanıcı adı `bariskucuk` olarak tanımlandı ve 16 haneli yüksek entropili güçlü parola ile koruma altına alındı (PBKDF2-HMAC-SHA256, 100.000 iterasyon).
+- **Yüksek Güvenlik:** `credentials.json`, `~/.config/serpent-studio/local_credentials.json` ve çekirdek auth modülü yeni güvenlik politikasıyla güncellendi; birim testleriyle doğrulandı.
 
-#### 2. 📂 Akıllı Include Dosyası Çözümleme ve Harici Dosya Önizlemesi (Smart Include Resolution)
-- **`THIncludeResolver` Entegrasyonu:** Serpent ana girdisindeki `include "tip_a.txt"` gibi göreceli veya tam yollar; proje dizini, çalışma dizini, `Base Condition`, `includes`, `inc`, `bundles` ve referans yolları taranarak diskteki gerçek dosyayla otomatik eşleştirilir.
-- **Harici Dosya Gözatma:** Açılır listedeki `+ Browse External Include...` seçeneğiyle disk üzerindeki herhangi bir Serpent include dosyası seçilip incelenebilir.
-- **Önbellek & Senkronizasyon Koruması:** Geçici dosya yokluk mesajlarının önbellekte takılı kalması önlendi; include dosyası incelenirken yanlışlıkla ana girdi üretiminin dosya içeriğinin üzerine yazılması engellendi.
+#### 2. 🔷 Yakıt Demeti (Assembly) Altıgen Kafes Çizim Restorasyonu (Hexagonal Canvas Restoration)
+- **Kök Düzeltme:** Çoklu dil (i18n) geçişlerinde combobox seçenek metinlerinin teknik Serpent sözdizimini (`lat 1/2/3`) bozması engellendi.
+- **Sağlam Geometri Tespiti:** Demet çizim motoru (`draw_assembly_canvas`), demet lattice tipi (`type 2/3`), indeks numaraları ve anahtar sözcükleri eksiksiz kapsayacak şekilde altıgen geometri çizimini (`ClickableCoreHexItem`) güvenceye aldı.
+- Altıgen demetler hem Türkçe hem İngilizce dil modlarında gerçeğe uygun altıgen hücre matrisi olarak görüntülenmektedir.
 
-#### 3. 🛡️ Fontconfig & Unicode Fallback Çökme Koruması (Zero Crash Architecture)
-- **Kök Neden Çözümü:** KaTeX WOFF web yazı tiplerinin sistem fontconfig mekanizmasında Unicode non-BMP sembolleri (emojiler) için hatalı fallback olarak atanması sonucu `libfontconfig.so.1` (`FcCharSetHasChar`) seviyesinde oluşan SIGSEGV çökmesi kökünden giderildi.
-- **Çok Katmanlı Güvenlik:** Sistem düzeyinde WOFF engelleyici kural ve `main.py` içerisinde otomatik çalışma zamanı güvenlik denetimi (`_ensure_fontconfig_safety()`) devreye alındı.
-- **Kararlılık:** CRS Sekmesi (Control Rods), TH Core Canvas demet tıklamaları, `THAssemblyDetailDialog`, `AddMaterialDialog` ve `PinCustomizerDialog` pencereleri %100 kararlı ve çökmeye karşı korumalı hale getirildi.
+#### 3. 🎨 Arayüz, Tema ve Dinamik Dil Geliştirmeleri (UI & Theme Polish)
+- **SpinBox Tooltip Tema Uyumu:** Sayısal giriş (SpinBox) üzerine gelindiğinde beliren tooltip pencerelerinin simsiyah açılma sorunu giderildi; Dark ve Light temalarla tam uyumlu dinamik QSS ve palet entegrasyonu sağlandı.
+- **İki Kademeli Serpent Input Preview Başlığı:** Önizleme başlık alanı iki kademeli hiyerarşik yapıya geçirilerek panel daraltılsa bile combobox veya butonların altında kalması engellendi.
+- **Kontrol Çubuğu (CRS) Popout Tema Uyumu:** Popout iletişim kutusunda buton stilleri, kaydırma çubuğu ve arka plan renk uyumsuzlukları giderildi.
+- **8 Ana Sekmede Dinamik Dil (i18n):** Materials, Assembly, Core Editor, Control Rods, Detectors, Coefficients, Settings ve Plot sekmelerindeki tüm etiket ve alanlar dil tercihine bağlandı.
 
-#### 4. ⚙️ TH Demet ID & CRS Haritalama Penceresi (Manual Mapper) Çökme Koruması
-- **Sinyal Senkronizasyonu Kök Düzeltmesi:** `THCoreManualMapperDialog` penceresinde parametreler değiştirilip *"Uygula"* butonuna basıldığında `THTemplatePage` nesnesinde tanımlı olmayan `system_modified` çağrısından kaynaklanan `AttributeError` çökmesi kökünden giderildi.
-- **Sinyal & Hata Yakalama Mimarisi:** `THTemplatePage` sınıfına `system_modified` sinyali eklendi, diyalog kabul işleyicisi hata yakalama bloklarıyla donatıldı.
-- **Küresel İstisna Kalkanı:** `main.py` içerisine entegre edilen `_global_exception_handler` ile PyQt6 slotlarında oluşabilecek beklenmedik istisnaların uygulamayı kapatması (qFatal/abort) tamamen engellendi.
-
-#### 5. 🧪 Otomatik Doğrulama ve Regresyon Testleri
-- `tests/test_search_include_and_crashes.py` test paketi eklenerek arama çubuğu kontrolleri, include çözümleme, diyaloglar ve manual mapper senkronizasyonu tam test güvencesine alındı.
+#### 4. 🧪 Otomatik Doğrulama ve Testler
+- Pre-flight test paketi (`test_version_policy`, `test_splash_and_bootstrap`, `test_dark_mode`, `test_updater`, `test_auth`, `test_accessibility_and_color_blindness`, `test_th_core_mapper_and_crs`, `test_search_include_and_crashes`) ve yeni arayüz testleri eksiksiz geçirilmiştir.
 
 ---
 
 ### 🔒 Dosya Bütünlüğü Doğrulama (Checksums)
 
-- **SHA-256:** `4944bb3828df3c2736270dc320197b153c2d8294cd395c02a5fb151cc1187905`
+- **SHA-256:** `c647900e1607d896a9134604dd59b976e768e4eab963897e8bd642d4c88b0cf1`
 
 Terminalden doğrulamak için:
 ```bash
-echo "4944bb3828df3c2736270dc320197b153c2d8294cd395c02a5fb151cc1187905  SerpentStudio-x86_64.AppImage" | sha256sum -c
+echo "c647900e1607d896a9134604dd59b976e768e4eab963897e8bd642d4c88b0cf1  SerpentStudio-x86_64.AppImage" | sha256sum -c
 ```
 
 ---
