@@ -1,6 +1,6 @@
 ========================================================================
                           SERPENT STUDIO - SÜRÜM NOTLARI
-                               Sürüm: v0.2.58.30
+                                Sürüm: v0.2.64.39
 ========================================================================
 
 [SÜRÜM NUMARALANDIRMA VE BAĞIMSIZ SAYAÇ POLİTİKASI (GEÇERLİ 4 KADEMELİ STANDART)]
@@ -24,6 +24,172 @@
 - Bu dönüşüm yalnızca sürüm notu gösterim standardıdır; geçmiş anlık görüntülerin, manifestoların veya çalışma dosyalarının içeriği değiştirilmez.
 - Kullanılmayan bir sayaç değeri atlanmışsa ilgili sürüm başlığında bunun yayımlanmadığı açıkça belirtilir.
 - Bu tarihçede `v0.1.17.15` kaydı yayımlanmamıştır; sonraki kayıt `v0.1.17.16` olarak devam eder.
+
+========================================================================
+[v0.2.64.39] - Malzeme Paneli ve Termal Saçılma Görünümü Çift Yönlü Geçiş Animasyonu (2026-10-04)
+------------------------------------------------------------------------
+KAPSAM:
+1. Malzeme Paneli Çift Yönlü Yatay Kayma Animasyonu:
+   - Malzeme Paneli içindeki Material Composition ve Thermal Scattering S(α, β) tabloları arasındaki geçişe pürüzsüz yatay kayma (horizontal slide) animasyonu entegre edildi (`SlidingStackedWidget`).
+   - İleri Geçiş (Malzeme → Termal S(α, β)): Sağdan sola doğru (offset = +width → 0) OutCubic eğrisiyle 260 ms akıcı kayma. Tablo verisi animasyon başlamadan önce hazırlanarak boş ekran/gecikme engellenir.
+   - Geri Geçiş (Termal S(α, β) → Malzeme): "← Back to Materials" butonuna tıklandığında veya termal tablodan bir satıra çift tıklandığında soldan sağa doğru (offset = -width → 0) ters yönlü kayma ile malzeme tablosuna dönülür.
+2. Kesinti Güvenliği ve Mantıksal Durum Takibi (`SlidingStackedWidget`):
+   - Animasyon devam ederken `currentIndex()` ve `currentWidget()` çağrılarının anında mantıksal hedef sayfayı raporlaması sağlandı; böylece başlık, arama ve alt bilgi sayaçları gecikmesiz güncellenir.
+   - Kullanıcı geçiş devam ederken tekrar tıkladığında veya pencereyi yeniden boyutlandırdığında (`resizeEvent`) çalışan animasyon grubu temizce sonlandırılır ve widget konumları sıfırlanır.
+   - Küresel `accessibility/stop_animations` tercihi aktifken veya pencere görünür değilken animasyon anında tamamlanarak erişilebilirlik standartları tam olarak korunur.
+3. Doğrulama ve Testler:
+   - `tests/test_materials_thermal_toggle.py` yeni animasyon testleriyle genişletildi (7/7 test OK).
+   - Tam test paketi ve modül testleri doğrulandı.
+
+========================================================================
+[v0.2.63.39] - Splash: Her Oturumda Rastgele Arazi ve Rastgele Hızlı "Meksika Dalgası" İzohipsleri (2026-10-04)
+------------------------------------------------------------------------
+KAPSAM:
+1. Oturuma Özgü Rastgele Şekiller (`ui/splash_terrain.py`):
+   - Önceki şekiller her açılışta aynı sabit veri (`_splash_izohips_data.py`) üzerinde birkaç piksellik bükmeydi. Artık sol ve sağ kenar için her oturumda bağımsız, rastgele bir yükseklik alanı üretilir: dış kenara doğru yükselen yamaç, alan bükmeli (domain-warped) fraktal gürültü ve rastgele eliptik doruklar (gerçek arazi izdüşümüne benzer siluetler).
+   - İzohipsler bu alanın 6 seviyedeki eğrileri olarak marching-squares ile çıkarılır; aynı alanın seviye eğrileri yapı gereği kesişmez. Uzantı doğrultusu yukarıdan aşağıya korunur; arazi şeritleri logo/yazı bölgesine girmez (sol 165 px, sağ 135 px).
+   - Her kapalı doruk halkasının merkezinde nirengi noktası bulunur; kapalı doruk halkası çıkmayan nadir arazi yeniden üretilir (üretim ~40-70 ms/kenar).
+2. Meksika Dalgası Hareketi:
+   - Dalga darbeleri uzantı doğrultusunda ilerler; geçtikleri yerde eğriler bükülür (eğim değişir) ve aralarındaki mesafe açılır/sıkışır.
+   - Darbe hızı, açılma/sıkışma ve bükülme genliği sinüs değil; rastgele hedeflere kritik sönümlü yumuşak geçişle anlık değişir, yön de rastgele değişebilir. Sol ve sağ bağımsızdır.
+   - Önceki animasyon her seviyeye farklı faz kaydırması uyguluyordu (kesişme riski). Yeni dönüşüm her satırda kesin artandır (`u → u·(1+s)+b`, `s ≥ −0.45`, logo/yazı önünde `tanh` ile yumuşak sınır), bu yüzden eğriler hiçbir karede kesişmez.
+   - Zamanlayıcı 16 ms (≈60 FPS), hareket delta-time ile; ölçüm ~3.5 ms/kare. "Tüm Animasyonları Durdur" etkinken statik önbellek kopyalanır.
+3. Kurallar (`AGENTS.md` §7) yeni yapıya göre güncellendi.
+4. Doğrulama: Splash testleri yeni davranışa göre yeniden yazıldı (oturumlar arası farklılık, 6 seviye, nirengi noktası, birçok tohumda ve birçok dalga karesinde sıfır kesişim, hızın periyodik olmayan değişimi). Tam paket: 89/89 modül, 616 test geçti.
+
+========================================================================
+[v0.2.62.39] - Arama Kutusu ve Listesi, Açılır Liste Konumu, TH Spinbox/Butonları, CRS Kimlik Kartı ve Başlıklardaki "&" (2026-10-04)
+------------------------------------------------------------------------
+KAPSAM:
+1. Search Features (`ui/global_search.py`):
+   - Sonuç listesi ayrı bir `Tool` penceresiydi; Wayland istemcinin pencere konumlandırmasına izin vermediği için ekranın ortasında açılıyordu. Liste artık ana pencere içinde bir katman olarak doğrudan kutunun altında, sağa hizalı açılır.
+   - Liste tasarımı yenilendi: sonuç sayısı, kategori renkli nokta + başlık/alt başlık, sağda kategori etiketi ve kısayol, sol vurgu çubuklu seçim, gölgeli kart, en fazla 7 satır yükseklik ve kaydırma, klavye ipucu satırı.
+   - Büyüteç ve metin aynı optik merkezde (piksel ölçümüyle doğrulandı); ikon HiDPI keskin, temizleme butonu ikonlu.
+2. SVG ikon üreticisi: 2x (HiDPI) bitmap'te SVG hedef dikdörtgen verilmeden çiziliyor, iki kat büyüyüp kırpılıyordu (`create_console_svg_icon`, spinbox okları). Düzeltildi.
+3. Açılır Listeler (QComboBox): Fusion stili listeyi seçili öğe kutunun üzerine gelecek şekilde konumluyordu. `combobox-popup: 0` ile tüm listeler kutunun hemen altında, en fazla 12 satır ve kaydırılabilir açılır.
+4. Thermal Hydraulics paneli: parametre editöründeki yerel `QDoubleSpinBox`'lar ana paneldeki `ModernDoubleSpinBox` ile değiştirildi; ağaç butonları (+ Base Bundle, + Instance, Clone, Delete), kanvas HUD butonları ve senaryo çipleri ortak panel buton stiline alındı.
+5. CRS sekmesi "Serpent Pin & Universe IDs": dört sütunlu ızgaradaki yerel spinbox'lar dar sütunda kartın dışına taşıyordu. `ModernSpinBox` ve satır başına bir etiket/değer düzenine geçildi.
+6. Başlıklardaki "&": Grup/buton başlıklarında tek `&` Qt tarafından kısayol işareti sayılıp "Absorber _Cladding", "Edit Core ID _CRS" gibi görünüyordu. `core.i18n.mnemonic_safe` ile ilgili grup, buton ve sekme başlıklarında düzeltildi (menülerdeki gerçek kısayollar korunur).
+7. Doğrulama: Tam paket modül başına izole süreçte: 89/89 modül, 616 test geçti. Testlerdeki iki tür kilit (ID spinbox'ların `QSpinBox` olması, başlıkların ham `&` metni) yeni davranışa göre güncellendi.
+
+========================================================================
+[v0.2.62.38] - Grafik Eksen ve Metin Onarımı, 60 FPS Grafik Animasyonları, Yeni Malzeme Tablosu, Ortak Panel Butonları ve Spinbox Hizası (2026-10-04)
+------------------------------------------------------------------------
+KAPSAM:
+1. Analysis Outputs Grafik Onarımları (`ui/analysis_outputs.py`, `core/analysis_services.py`):
+   - Kök neden: Hover artı-imleci için eklenen gizli `axvline(0)`/`axhline(0)` çizgileri otomatik ölçeklemeye katılıyor, her grafiğin eksen aralığını 0'ı içermeye zorluyordu; keff eğrisi (1.10–1.15) 0–1.2 aralığında dümdüz görünüyordu. Çizgiler artık `add_artist` ile eksen dönüşümünde eklenir, veri aralığını etkilemez.
+   - Matplotlib/FreeType "raster overflow" hatası sessizce yutuluyor, grafik metinsiz/boş kalıyordu. Artık yazı tipi önbelleği temizlenip yeniden çizilir, gerekirse ipucusuz (no_hinting) çizime düşülür.
+   - k-eff kestiricisi referans betikle (`Depletion 3 | Hibrit/grafik_keff.py`) uyumlu olarak `IMP_KEFF` öncelikli; ardından ANA/COL/TOT. Aynı veri ile referans değerleri birebir doğrulandı (1.1474 → 1.1042).
+   - 60'tan fazla noktalı seriler (ör. 500 eksenel dilim) işaret/hata çubuğu yerine belirsizlik bandı üstünde düz çizgiyle çizilir.
+   - Precursor özetinde "Shortest/Longest Group Lifetime" değerleri ters raporlanıyordu; düzeltildi.
+2. Precursor ve Eksenel Akı Animasyonları:
+   - Her karede constrained layout ve tüm figürün yeniden çizimi 50–100 ms sürüyor, 750 ms'lik animasyon ~10 FPS takılgan oynuyordu. Animasyon süresince yerleşim dondurulur, statik arka plan bir kez çizilip yalnızca hareketli öğeler blit edilir (`BaseChartAnimator._blit_prepare/_present`); süre 450 ms. Ölçüm: 16 ms/kare (60 FPS).
+3. Material Composition Tablosu (`ui/material_table_delegate.py`):
+   - İşlev ve veri modeli korunarak yeni görünüm: malzeme renk kartı + kalın kimlik, kategoriye göre renkli rozet, birimli yoğunluk (g/cm³ ya da atomik) ve sıcaklık (K), izotop çipleri (+N taşma), satır hover ve sol vurgu çubuklu seçim, sade başlık; satır numaraları gizlendi, aksiyon butonu temaya duyarlı.
+4. Ortak Panel Butonları (`ui/panel_buttons.py`):
+   - Konsoldaki ikonlu sade buton stili; Preflight, alt panel "Pop-out Both", Analysis Outputs başlığı ve grafik pop-out penceresi, Core/Assembly kanvas pop-out, Kontrol Çubuğu pop-out, ayrık konsol/alt panel penceresi, TH kanvas ve TH panel (pop-out dahil) butonlarına uygulandı. Linear/Logarithmic segmentli grup; Pop-out/Dock geçişinde ikon değişir; emoji önekleri SVG ikonlarla değiştirildi.
+5. Spinbox Ok Hizası: Global `QPushButton` min-height (22 px) adımlayıcı butonları alandan taşırıyordu; boyut QSS ile sabitlendi, ▲/▼ artık alanın iki yarısında ortalı.
+6. Doğrulama: Tam paket modül başına izole süreçte: 89/89 modül, 616 test geçti. Grafikler, tablo, butonlar ve spinbox gerçek Wayland ekranında iki temada ekran görüntüsüyle kontrol edildi; animasyon kare süreleri ölçüldü.
+
+========================================================================
+[v0.2.61.37] - Tema Geçişi Gecikmesinin Kök Neden Onarımı, Tutarlı Konsol, Yeni Spinbox ve Standart Quick-Diff Renkleri (2026-10-04)
+------------------------------------------------------------------------
+KAPSAM:
+1. Karanlık/Aydınlık Geçiş Gecikmesi (gerçek Wayland ekranında profil ile ölçüldü):
+   - Kök Neden 1: `_apply_tab_materials_theme` malzeme tablosu hücrelerini `setForeground` ile yeniden renklendirirken `itemChanged` sinyali her satır için `on_material_cell_changed` → `on_generate_clicked` zincirini çalıştırıyordu. Her üretim dosya sistemini `rglob` ile tarayan kesit kütüphanesi aramasını iki kez yapıyor (≈0.26 s/çağrı, geçiş başına 10 çağrı) ve iç içe `processEvents` döngüsüne giriyordu. Geçiş bu yüzden ~3.3 s kilitleniyor, 3. geçişte 20 s'ye kadar uzayabiliyordu.
+   - Kök Neden 2: Animasyon bittikten sonra tüm sekmeler tek blokta yeniden stillendiriliyor ve bu blok (`transition_finished` + `destroyed`) iki kez çalışıyordu (~2×0.4 s donma).
+   - Çözüm: Tablo yeniden renklendirmesi sinyaller bastırılarak yapılır; `get_default_cross_section_library` sonucu süreç başına önbelleğe alınır (her "Build Geometry" de ~0.5 s hızlandı). Arka plan sekmeleri, gizli spinbox'lar ve Analysis Outputs/TH sayfaları animasyondan sonra ~12 ms'lik olay döngüsü dilimlerinde stillendirilir; yeni bir geçiş eski dilimleri iptal eder, kullanıcı bekleyen sekmeyi açarsa anında stillendirilir. Konsol bölücüsünün widget düzeyindeki stil ataması (~0.2 s tüm ağaç yeniden stillendirmesi) ana QSS'e taşındı. Geçiş katmanının ilk karesi pencereyle piksel piksel aynıdır; donup kalan ışıma artık görünmez.
+   - Sonuç: Senkron geçiş 3.3 s → ~0.25–0.33 s; animasyon sonrası en uzun duraklama 0.13 s.
+2. Konsol Bölgesi Tema Uyumu ve Butonlar:
+   - Açık temada konsol çerçevesi, filtre/eylem butonları ve arama kutusu koyu kalıyor, metin alanı beyaza dönüyordu; Uyarı/Hata butonları diğerlerinden farklı renkteydi. Konsol artık tek `_apply_console_theme` ile iki temada tutarlıdır.
+   - Filtreler (All/Errors/Warnings/Success) segmentli tek grup; sayaç varsa yazı rengi uyarı/hata rengine döner. Clear/Copy/Find/Pop-out ikonlu, sade butonlar. Log metni araç çubuğunun altına itilir (satırlar butonların altına girmez).
+   - Log satırları açık temada okunur koyu tonlara yeniden eşlenir (`FilterableLogConsole.set_color_map`); kayıtlar kanonik kalır, tema değişince yeniden çizilir.
+   - Konsol üstündeki sürükleme çubuğu koyu temada açık gri kalıyordu; tema rengine bağlandı.
+3. Spinbox Yeniden Tasarımı (`ui/custom_spinbox.py`):
+   - Kutu içinde kutu görünümü kaldırıldı: tek alan, solda değer, sağda dikey ▲/▼ adımlayıcı. Hover ve odak kenarlığı (QSS `:focus-within` desteklemediği için dinamik özellik ile), Yukarı/Aşağı ve PageUp/PageDown tuşları, basılı tutunca otomatik tekrar. İki sınıf ortak `_ModernSpinBase` kullanır.
+4. Input Preview Değişiklik Önizlemesi (Quick-Diff) Standart Renkleri:
+   - Tüm değişiklikler tek renkle (camgöbeği; mini haritada kehribar) işaretleniyordu. VS Code/Git kuralına geçildi: eklenen satır yeşil, değiştirilen satır mavi (hafif satır tonu + renkli satır numarası), silinen satırlar sınırda kırmızı üçgen. Mini harita aynı paleti kullanır. Sınıflandırma `ui/change_markers.py` içindedir.
+5. Diğer: Operation/Plot/Detector/Coefficient sekmelerinde kaydırma alanı zemini koyu temada açık gri kalıyordu; şeffaf yapıldı.
+6. Doğrulama: Tam paket modül başına izole süreçte çalıştırıldı: 89/89 modül, 616 test geçti. Tema geçişi gerçek Wayland ekranında profil betiğiyle ölçüldü; konsol, spinbox ve quick-diff görünümleri iki temada ekran görüntüsüyle kontrol edildi.
+
+========================================================================
+[v0.2.61.36] - Anında ve Takılmasız Tema Geçişi, 60 FPS Işıma Animasyonu ve 10x Hızlandırma (2026-10-04)
+------------------------------------------------------------------------
+KAPSAM:
+1. Karanlık/Aydınlık Mod Anında Geçiş ve Sıfır Takılma (Ctrl+Shift+D & View Menüsü):
+   - Kök Neden: `ui/theme.set_current_theme` içinde çağrılan `app.setStyleSheet(...)`, Qt'nin süreçteki binlerce widget'ını unpolish/polish döngüsüne sokarak Python GIL ve Qt ana olay döngüsünü 1.54 saniye kilitliyor ve 183.000 olay filtresi çağrısı üretiyordu. Ardından overlay başlatıldıktan 15 ms sonra `_apply_theme` senkron çalışıp animasyonu tam ortasında donduruyor (takılma ve kare atlama) ve toplamda ~2.3 saniyelik bir donmaya yol açıyordu.
+   - Çözüm:
+     * `set_current_theme` içindeki gereksiz `app.setStyleSheet(...)` çağrısı kaldırıldı (zaten `MainWindow.setStyleSheet` tüm pencereyi ve alt bileşenleri stillendirmekte, `QToolTip.setPalette` ise işletim sistemi araç ipucu paletini mikrosaniyeler içinde güncellemektedir).
+     * `get_main_window_qss` içine doğrudan `QTabBar {{ background-color: ...; }}` kuralı eklenerek `tabs_container` üzerine yapılan ve tüm sekme ağacını yeniden derleyen ayrı `setStyleSheet` çağrısı (190 ms) ortadan kaldırıldı.
+     * `MainWindow.setStyleSheet` çalışırken `MainWindow` ve `GlobalFeatureSearchWidget` üzerindeki `qApp` olay filtreleri geçici olarak askıya alınıp korundu (~100 ms tasarruf).
+     * `ui_settings.sync()` senkron disk yazma blokajı kaldırıldı; gereksiz spinbox yinelemeleri elendi.
+     * Aktif yüzey stili 100% opak anlık önbellek katmanı (overlay frame 0) altında <150 ms içinde tamamlanıp, akabinde 360 ms çift geçişli siber camgöbeği / okyanus mavisi ışıma dalgası kesintisiz 60 FPS ile CPU yükü olmaksızın akıtıldı.
+     * HiDPI / Wayland ölçekli ekranlar için `ThemeTransitionOverlay` anlık görüntü alımına `devicePixelRatio` desteği eklendi.
+2. Doğrulama:
+   - Tema geçiş gecikmesi 2750 ms'den ~180 ms'ye indirildi (10x'ten fazla hızlanma).
+   - `tests/test_dark_mode.py` (10/10 test OK), `tests/test_movable_tabs_and_shortcuts.py` (16/16 test OK), `tests/test_version_policy.py` (1/1 test OK).
+
+========================================================================
+[v0.2.61.35] - Kontrol Çubuğu Sarı Vurgusu, Grafik Yerleşim Onarımı, Görünmeyen SVG Simgeleri, Sekme Çentikleri ve Yeşil Test Paketi (2026-10-04)
+------------------------------------------------------------------------
+KAPSAM:
+1. Kontrol Çubuğu Sözdizimi Vurgusu (yeni yetenek):
+   - Çubuk hareket ettirildiğinde (slider, spinbox, jog, preset) `surf <id> pz <z>` değeri hem Serpent Input Preview'da hem Kontrol Çubuğu sözdizimi önizlemesinde Core/Assembly kanvasındaki gibi sarıyla vurgulanır ve satır ortalanarak görünüme getirilir (`CodeEditor.highlight_span`, `MainWindow.highlight_control_rod_surface_in_editors`).
+2. Analysis Outputs Grafik Yerleşimi:
+   - Her çizimde çağrılan `tight_layout()` constrained layout motorunu kalıcı olarak devre dışı bırakıyordu; panel/pop-out/splitter boyutu değişince eksenler yeniden yerleşmiyor, dar alanda 2–14 etiket ve başlık kesiliyordu. Constrained layout her çizimde korunur; uzun başlıklar satır kaydırır. 10 analizin tamamında dar boyutta kesik etiket kalmadı.
+   - `figure.colorbar` ile eklenen renk çubukları `axes.clear()` ile silinmediğinden her ısı haritası çiziminde birikiyor ve ana grafiği daraltıyordu (3 çizimde 3 renk çubuğu). Her çizim öncesi ek eksenler kaldırılır.
+3. Görünmeyen SVG Simgeleri (`ui/theme.py`, `qss_svg_url`):
+   - Qt stil sayfaları `data:` URI yüklemez; Workspace ağacı klasör okları, onay kutusu tik/tire işaretleri ve yedek combo okları hiç çizilmiyordu. SVG'ler içerik özetli önbellek dosyalarına yazılıp QSS'e dosya yolu olarak verilir.
+   - Workspace ağacında boş klasörler de genişletme oku taşır.
+4. Sekme Çubuğu Siyah Çentikleri:
+   - Fusion'ın sekme tabanı her sekme boşluğunun tepesine koyu bir blok çiziyor, saydam zeminle ekranda siyah çentik oluşuyordu. Ana ve alt sekmelerde taban çizimi kapatıldı; sekme çubuğu tema zeminiyle boyanır (gerçek Wayland ekran görüntüsüyle doğrulandı).
+5. Hata Düzeltmeleri:
+   - Varsayılan modelden üretilen girdide Kontrol Çubuğu bloğu `aic` ve `ss304` malzemelerini ikinci kez tanımlıyordu (Serpent doğrulaması başarısız). Ana malzeme bölümünde tanımlı malzemeler atlanır.
+   - k-eff hover etiketleri (`Gün`, `Tükenme`, `Hata`) dil ayarından bağımsız Türkçe sabitti; i18n'e bağlandı.
+   - `btn_dock_back` çeviri anahtarı aynı sözlükte iki kez tanımlıydı; Analysis Outputs "Grafiği Buraya Kenetle" metni hiç görünmüyordu. Pop-out/Dock butonu da ayrılıp geri gelince sabit İngilizce metne dönüyordu.
+6. Test Paketi:
+   - 12 eskimiş test güncel davranışa göre düzeltildi (debounce/dwell gecikmeleri, i18n metinleri, temiz başlangıç, workspace içi include, D-010 RGB tuple, davranış tabanlı splash ve masaüstü ikonu kontrolleri); `test_parser.py` gerçek bir unittest'e dönüştürüldü.
+   - Testlerden sonra PyQt çıkış temizliğinde oluşan segfault'lar (çıkış kodu 139) `tests/__init__.py` içinde PyQt atexit kancasından önce çalışan sonlandırıcıyla giderildi; gerçek çıkış kodu korunur.
+   - Yeni testler: kontrol çubuğu sarı vurgusu, renk çubuğu birikimi ve constrained layout korunumu.
+   - Tam paket: 89/89 modül, 616 test geçti.
+
+========================================================================
+[v0.2.60.34] - Kontrol Çubuğu Editör Ezme Hatası, Kod Editörü Çökmesi, Test Ortamı Yalıtımı ve Tema Darboğazı (2026-10-04)
+------------------------------------------------------------------------
+KAPSAM:
+1. Kontrol Çubuğu Sekmesinin Editördeki `surf pz` Değerini Ezmesi (`ui/control_rods.py`):
+   - Kullanıcı editörde `surf <id> pz <z>` değerini değiştirip debounce dolmadan Kontrol Çubukları sekmesine geçtiğinde, widget'ın eski durumu (`refresh_from_model` / `sync_from_model_data` → `_flush_sync` → `_notify_surface_elevation_changed`) editördeki değeri sessizce eskisiyle değiştiriyordu (ör. -41.30 → 87.50).
+   - Editöre yazma artık yalnızca kullanıcı çubuğu hareket ettirdiğinde (slider, yüzde/Z-tip/adım spinbox, jog, preset) yapılır; modelden gelen yenilemeler ve animasyon bitişleri editör metnini değiştirmez.
+2. Sekme Geçişinde Bekleyen Düzenlemenin Kaybolması (`ui/main_window.py`, `on_tab_changed`):
+   - D-034 sonrası sekme geçişi parse etmiyor ancak debounce zamanlayıcısını durdurmaya devam ediyordu; 350 ms içinde sekme değiştiren kullanıcının düzenlemesi hiç uygulanmıyordu. Zamanlayıcı artık durdurulmaz, düzenleme normal debounce yolundan uygulanır.
+3. Kod Editörü Sarı Vurgu Zamanlayıcısı Segfault'u (`CodeEditor._apply_yellow_token_highlight`):
+   - Her vurguda `self`'i yakalayan closure'lı yeni bir `QTimer` oluşturuluyordu; editör silinirken tetiklenen zamanlayıcı süreci çökertiyordu. Tek, editöre bağlı zamanlayıcı ve bound method (`_clear_transient_highlight`) kullanılır.
+4. Test Ortamının Gerçek Kullanıcı Verisinden Yalıtılması:
+   - Testler gerçek geliştirme workspace'ine (`workspace/snapshots/` altına snapshot ve `.recovery_draft.json`) yazıyor, `test_workspace_persistence` gerçek QSettings dosyasını `clear()` ile siliyor, auth testleri gerçek oturum dosyasını değiştirebiliyordu.
+   - `tests/__init__.py` her test oturumunda geçici bir workspace ve geçici `XDG_CONFIG_HOME` kurar; artık sandbox'ları temizler.
+   - `MainWindow.workspace_root()` `SERPENT_STUDIO_WORKSPACE_ROOT` ortam değişkenini destekler.
+   - `core/auth.py` yapılandırma dizinini XDG standardına göre (`$XDG_CONFIG_HOME/serpent-studio`, varsayılan `~/.config/serpent-studio`) belirler.
+5. Tema Yeniden Stillendirme Darboğazı (`ui/theme.py`):
+   - `set_current_theme()` her çağrıda aynı QSS'i `app.setStyleSheet()` ile yeniden atayarak tüm widget ağacını yeniden polish ediyordu. QSS değişmediğinde atama atlanır.
+   - `test_movable_tabs_and_shortcuts.py` 280+ saniyede zaman aşımından 52 saniyede 16/16 geçer hale geldi; pencere içeren testler 2.7–3.5 kat hızlandı.
+6. Test Güncellemeleri:
+   - `test_control_rods_ui`: eski "sekme geçişi parse'ı zorlar" testi D-034 sözleşmesine göre `test_tab_change_does_not_flush_pending_preview_parse` olarak yeniden yazıldı.
+   - `test_workspace_persistence`: sabit gerçek workspace yolu yerine yalıtılmış workspace kullanır.
+7. Belge Bakımı:
+   - `docs/DECISIONS.md` içindeki yinelenen karar numaraları (D-019, D-020, D-021, D-030) ardışık D-029–D-034 olarak düzeltildi.
+   - Kayda geçirilmemiş `v0.2.60.33` sürüm notu eklendi; `PROJECT_STATE.md` eskimiş satırları güncellendi.
+8. Test Doğrulamaları:
+   - Tam paket (89 modül, modül başına izole süreç): 74 modül geçti; kalan 15 modülün 12'si önceden var olan eskimiş test beklentileri, 1'i test içermeyen betik (`test_parser.py`), 2'si testler geçtikten sonra yorumlayıcı kapanışında PyQt segfault'u. Bu turda yeni başarısızlık yoktur.
+
+========================================================================
+[v0.2.60.33] - Canvas ve Sözdizimi Bağımsızlığı İlkesi ve Sekme Geçişi Model Koruması (2026-10-03)
+------------------------------------------------------------------------
+KAPSAM:
+1. Core, Assembly ve PPF kanvasları yalnızca doğrulanmış dahili modelden (`custom_assemblies`, `core_matrix`, `pin_definitions`) beslenir; metin editöründeki sözdizimini ayrıştırarak çizim yapmaz.
+2. `on_tab_changed` içindeki `parse_preview_text` zorlaması kaldırıldı; sekme gezinmesi dahili modeli ezemez.
+3. `_build_canonical_core_geometry` önceliği kanonik UI modeline (`core_matrix`, `shape_combo`, `pitch_spin`) verildi.
+4. İlke `AGENTS.md`, `GEMINI.md`, `.agents/rules/serpent-studio.md`, `docs/ARCHITECTURE.md` ve `docs/DECISIONS.md` (D-034) dosyalarına işlendi.
+5. Test Doğrulamaları: `test_targeted_ui_thermal_hover.py`, `test_ppf_canvas_rendering.py`, `test_geometry_parser.py`, `test_analysis_services.py` geçti.
 
 ========================================================================
 [v0.2.59.32] - Çevrimdışı Kimlik Doğrulama Güvenliği, Altıgen Kafes Çizim Restorasyonu ve Arayüz İyileştirmeleri (2026-09-29)

@@ -1,12 +1,12 @@
 {
-  "latest_version": "v0.2.59.32",
+  "latest_version": "v0.2.64.39",
   "min_supported_version": "v0.2.50.00",
   "mandatory": false,
-  "release_date": "2026-09-30",
-  "release_title": "Serpent Studio v0.2.59.32",
-  "release_notes": "Release v0.2.59.32: Çevrimdışı Kimlik Doğrulama Güvenliği, Altıgen Kafes Çizim Restorasyonu ve Arayüz İyileştirmeleri",
-  "sha256": "c647900e1607d896a9134604dd59b976e768e4eab963897e8bd642d4c88b0cf1",
-  "file_size_bytes": 140356088,
-  "download_url": "https://github.com/bkbariskucuk/serpent-studio/releases/download/v0.2.59.32/SerpentStudio-x86_64.AppImage",
-  "zsync_url": "https://github.com/bkbariskucuk/serpent-studio/releases/download/v0.2.59.32/SerpentStudio-x86_64.AppImage.zsync"
+  "release_date": "2026-10-04",
+  "release_title": "Serpent Studio v0.2.64.39",
+  "release_notes": "Malzeme Paneli Termal Saçılma Çift Yönlü Geçiş Animasyonu",
+  "sha256": "7b1e2cb5114a4bc2cddfb891d060cd1001c36600334257a7d5dc0ca87c10c051",
+  "file_size_bytes": 140585464,
+  "download_url": "https://github.com/bkbariskucuk/serpent-studio/releases/download/v0.2.64.39/SerpentStudio-x86_64.AppImage",
+  "zsync_url": "https://github.com/bkbariskucuk/serpent-studio/releases/download/v0.2.64.39/SerpentStudio-x86_64.AppImage.zsync"
 }
