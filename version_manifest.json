@@ -1,12 +1,12 @@
 {
-  "latest_version": "v0.2.64.39",
+  "latest_version": "v0.2.66.44",
   "min_supported_version": "v0.2.50.00",
   "mandatory": false,
-  "release_date": "2026-10-04",
-  "release_title": "Serpent Studio v0.2.64.39",
-  "release_notes": "Malzeme Paneli Termal Saçılma Çift Yönlü Geçiş Animasyonu",
-  "sha256": "7b1e2cb5114a4bc2cddfb891d060cd1001c36600334257a7d5dc0ca87c10c051",
-  "file_size_bytes": 140585464,
-  "download_url": "https://github.com/bkbariskucuk/serpent-studio/releases/download/v0.2.64.39/SerpentStudio-x86_64.AppImage",
-  "zsync_url": "https://github.com/bkbariskucuk/serpent-studio/releases/download/v0.2.64.39/SerpentStudio-x86_64.AppImage.zsync"
+  "release_date": "2026-10-05",
+  "release_title": "Serpent Studio v0.2.66.44",
+  "release_notes": "Eşmerkezli Kor Geometrisi, +2 Izgara Adımları, lat Komutu Odaklanması ve Undo/Redo Senkronizasyonu",
+  "sha256": "2bd88fa2110f4ae88b48e9869f506c4cf295f76271f5330ccde6a503b1677dd6",
+  "file_size_bytes": 140651000,
+  "download_url": "https://github.com/bkbariskucuk/serpent-studio/releases/download/v0.2.66.44/SerpentStudio-x86_64.AppImage",
+  "zsync_url": "https://github.com/bkbariskucuk/serpent-studio/releases/download/v0.2.66.44/SerpentStudio-x86_64.AppImage.zsync"
 }

@@ -1,6 +1,6 @@
 ========================================================================
                           SERPENT STUDIO - SÜRÜM NOTLARI
-                                Sürüm: v0.2.64.39
+                                 Sürüm: v0.2.66.44
 ========================================================================
 
 [SÜRÜM NUMARALANDIRMA VE BAĞIMSIZ SAYAÇ POLİTİKASI (GEÇERLİ 4 KADEMELİ STANDART)]
@@ -24,6 +24,134 @@
 - Bu dönüşüm yalnızca sürüm notu gösterim standardıdır; geçmiş anlık görüntülerin, manifestoların veya çalışma dosyalarının içeriği değiştirilmez.
 - Kullanılmayan bir sayaç değeri atlanmışsa ilgili sürüm başlığında bunun yayımlanmadığı açıkça belirtilir.
 - Bu tarihçede `v0.1.17.15` kaydı yayımlanmamıştır; sonraki kayıt `v0.1.17.16` olarak devam eder.
+
+========================================================================
+[v0.2.66.44] - Ctrl+Z ve Ctrl+Y (Geri Al / Yinele) Sırasında Assembly & Core Izgara Sayılarının UI Senkronizasyonu (2026-10-05)
+------------------------------------------------------------------------
+KAPSAM:
+1. Assembly Controls (`assembly_size_spin`, `asm_name_edit`) ve Core Controls (`grid_size_spin`) Geri Al/Yinele Eşitlemesi:
+   - `undo_canvas_action` ve `redo_canvas_action` metotlarında, matris durumları önceki veya sonraki duruma geri yüklendiğinde `assembly_size_spin` ("Grid (NxN):") değerinin eski boyutta takılı kalması sorunu giderildi.
+   - Aktif yakıt demetinin geri yüklenen matris boyutu (`len(custom_assemblies[cur_asm])`), sinyaller geçici olarak kilitlenerek (`blockSignals(True)`) doğrudan `assembly_size_spin` bileşenine yansıtıldı.
+   - Benzer şekilde demet adı (`asm_name_edit`), pin adımı (`pin_pitch_spin`) ve çekirdek ızgara boyutu (`grid_size_spin`) Geri Al / Yinele işlemlerinde sinyaller tetiklenmeden senkronize edildi.
+2. Izgara Boyutu Değişimlerinde Lattice Başlığına Gidiş Entegrasyonu:
+   - Geri al veya yinele sırasında kafes boyutu değiştiğinde mini kod önizlemesinde doğrudan ilgili `lat` komut başlığına odaklanılması sağlandı.
+DOĞRULAMA:
+- `tests/test_concentric_rings_and_grid_steps.py` (9/9 test başarılı):
+  * `test_assembly_and_core_controls_update_on_undo_redo`: Assembly ve Core ızgara boyutlarının Ctrl+Z ve Ctrl+Y adımlarında anlık olarak spinbox üzerinde güncellendiği doğrulandı.
+- `tests/test_version_policy.py` test edildi ve geçti.
+
+========================================================================
+[v0.2.66.43] - Izgara Boyutu ve Dış Katman Demet Değişimlerinde Mini Kod Editöründe İlgili "lat" Komutuna Otomatik Odaklanma (2026-10-05)
+------------------------------------------------------------------------
+KAPSAM:
+1. `CodeEditor.locate_lattice_header` ve `MainWindow.navigate_to_lattice_in_code`:
+   - `CodeEditor` bileşenine `locate_lattice_header(lattice_id)` metodu eklendi. Girdi dosyasındaki ilgili lattice başlık kartını (`lat <id> ...` veya `lat pinlat_<id> ...`) regex ile doğrudan bularak imleci o satıra konumlandırır, viewport'u dikey olarak merkezler ve satırı yumuşak sarı ışıkla vurgular.
+   - `MainWindow` seviyesinde `navigate_to_lattice_in_code(lattice_id)` adaptörü tanımlandı; include dosyası modu aktifken ana dosya geçişini de şeffaf şekilde yönetir.
+2. Core ve Assembly Izgara Boyut Değişimlerinde Anlık "lat" Navigasyonu:
+   - Core panelindeki `grid_size_spin` değiştirildiğinde, `code_preview` doğrudan çekirdek kafes tanımına (`lat 999 ...`) gider ve yeni NxN ızgara boyutunu gösterir.
+   - Assembly panelindeki `assembly_size_spin` değiştirildiğinde, `code_preview` doğrudan seçili yakıt demetinin tanımına (`lat <asm_id> ...`) odaklanır.
+3. Dış Katman Demet Sayısı ve Halka Sarma İşlemlerinde Anlık "lat" Navigasyonu:
+   - Core panelindeki `core_ring_edge_spin` değeri değiştirildiğinde veya "⚡ Halkaları Sar" (`btn_generate_rings`) tıklandığında, `code_preview` doğrudan `lat <core_lat_id>` komut satırına gider ve vurgular.
+DOĞRULAMA:
+- `tests/test_concentric_rings_and_grid_steps.py` (8/8 test başarılı):
+  * `test_lat_command_navigation_on_grid_and_edge_changes`: `grid_size_spin`, `core_ring_edge_spin`, `btn_generate_rings` ve `assembly_size_spin` değişimlerinde `code_preview` imlecinin ilgili `lat` komutuna odaklandığı doğrulandı.
+- `tests/test_version_policy.py` test edildi ve geçti.
+
+========================================================================
+[v0.2.66.42] - Core Concentric Rings Geometri Oluşturucu, Dinamik Halka Algılama & +2 Adımlı Merkez Sabit Izgara Genişletme (2026-10-05)
+------------------------------------------------------------------------
+KAPSAM:
+1. Dış Katman Demet Sayısı ve Eşmerkezli (Concentric) Halka Oluşturucu:
+   - Core Canvas panelinde kullanıcının dış katman kenar başına demet sayısını (E) belirleyebileceği `core_ring_edge_spin` ve "⚡ Halkaları Sar" (`btn_generate_rings`) eklendi.
+   - Altıgen örgüde dış katmandan içeriye doğru (E, E-1, ..., 1) azalan eşmerkezli halka matematik modeli R = E - 1 yarıçapı üzerinden T = 1 + 3E(E-1) toplam aktif demeti otomatik hesaplar (Örn: E=5 için 61 demet: 24, 18, 12, 6, 1; E=7 için 127 demet).
+   - "Halkaları Sar" butonu tıklandığında, merkezden dışarıya doğru aktif demetler sarılır; mevcut yerleştirilmiş demet kimlikleri korunur ve dış sınır su yansıtıcısıyla (water/reflector) çevrelenir. Gerekirse ızgara boyutu otomatik olarak genişletilir.
+2. Dinamik Halka ve Demet Algılama (İçe Aktarma & Canlı Düzenleme):
+   - `detect_core_ring_structure()` servisi eklendi; açık dosyalar, diskteki mevcut modeller veya dışarıdan yüklenen Serpent girdileri (örneğin UMAY kalbi) içe aktarıldığında ya da tuval boyandığında çekirdek matrisini otomatik tarayarak aktif demetleri, halka katmanlarını (H0, H1, ... HR) ve kenar demet sayısını (E) dinamik tespit eder; UI rozetini ve spinbox değerini anlık günceller.
+3. +2 Adımlı Merkez Sabit Izgara Genişletme (Assembly & Core):
+   - `grid_size_spin` ve `assembly_size_spin` adımları +2 tek sayı adımıyla çalışacak şekilde (`setSingleStep(2)`) yapılandırıldı.
+   - Izgara boyutu artırıldığında veya azaltıldığında (örn: 17 → 19), merkezdeki pinler ve demetler fiziksel olarak tam merkezde sabit kalacak şekilde merkez kaydırma algoritması (`rc_new - rc_old`, `cc_new - cc_old`) uygulandı; çevreye eklenen yeni katmanlar otomatik olarak su/yansıtıcı ile kaplandı.
+4. Tam Kanvas ve Sözdizimi Bağımsızlığı & Geri Al/Yinele (Undo/Redo):
+   - Halka oluşturma ve ızgara boyutlandırma işlemleri tam geri alma/yineleme (Ctrl+Z / Ctrl+Y) desteğine entegre edildi.
+   - Kanvas ve veri akışı tek yönlü model prensibine bağlı kalarak sözdizimi ayrıştırması tetiklemeden doğrudan doğrulanmış model üzerinden işlendi.
+DOĞRULAMA:
+- `tests/test_concentric_rings_and_grid_steps.py` (7/7 test başarılı):
+  * +2 adım boyutu doğrulaması (ModernSpinBox `singleStep() == 2`).
+  * Çekirdek ve yakıt demet merkezlerinin ızgara genişlemesinde sabit kalması ve çevrenin suyla dolması.
+  * Altıgen ve kare geometride eşmerkezli halka üretimi (E=5 -> 61, E=7 -> 127, E=3 -> 25, E=5 kare -> 81).
+  * UMAY reaktör girdisinden dinamik 7 halka ve 127 aktif demet algılama.
+  * Geri Al / Yinele sonrası matris ve halka algılama rozetinin anlık geri yüklenmesi.
+- `tests/test_version_policy.py`, `tests/test_core_canvas_detail.py`, `tests/test_canvas_sync.py`, `tests/test_parser.py` testleri başarıyla geçti.
+
+========================================================================
+[v0.2.65.42] - Analysis Outputs Hover Tutukluk/Titreme Giderimi (Histerezis & Eşzamanlı Olmayan Çizim & Giriş Animasyonu Koruması) (2026-10-04)
+------------------------------------------------------------------------
+KAPSAM:
+1. Giriş Animasyonu ve Arka Plan Çakışması Kök Neden Çözümü:
+   - Çubuk ve çizgi grafiklerinin ilk yüklenişinde çalışan giriş animatörü (`BarChartAnimator` / `LineChartAnimator`), hazırlık aşamasında veri çizicilerini `animated=True` yapıp `canvas.draw()` çalıştırıyordu.
+   - Bu esnada tetiklenen `draw_event`, veri öğeleri (çubuklar ve çizgiler) çizilmemişken boş/eksik bir tuval arka planını `_hover_bg` olarak kaydediyordu.
+   - Animasyon bittiğinde fare hareket ettirildiğinde, `_blit_hover` bu boş arka planı geri yüklüyor; Qt ise tam figürü çizmeye çalışarak fare hareketi başına titreme ve takılmaya yol açıyordu.
+   - `_is_chart_animating()` metodu eklendi; animasyon sürerken veya eksendeki veri nesneleri hareketliyken `_on_draw` metodu `_hover_bg` tamponunu boşa almaz veya boş arka plan kaydetmez. Animasyon bitip yerleşim çözüldüğünde (`_thaw_layout`), nihai eksiksiz grafik üzerinden temiz arka plan yakalanır.
+2. Linux / Qt Senkron `repaint()` Yerine Eşzamanlı Olmayan (Asynchronous) `canvas.update()`:
+   - Matplotlib'in yerleşik `FigureCanvasQTAgg.blit()` metodu doğrudan `self.repaint()` çağırarak her fare hareketinde X11/Wayland pencere sunucusuna senkron ve engelleyici (blocking) çizim çağrısı yapıyordu.
+   - Fare 120-1000 Hz hızında hareket ettiğinde UI iş parçacığı senkron çizim çağrılarıyla boğuluyor ve fare takılıyordu.
+   - `_blit_hover()` içinde `restore_region` ve `draw_artist` ile Agg bellek tamponu güncellendikten sonra `self._canvas.update()` çağrılarak çizim Qt olay döngüsü ve ekran tazeleme hızıyla (60/120/144 Hz) pürüzsüzce birleştirildi (coalesced).
+3. Histerezis (Hysteresis) ve Eşik Titreşimi Engelleme:
+   - Önceki 18 piksellik katı eşik, fare bir noktanın 18 px sınırında hareket ederken ipucunun sürekli açılıp kapanmasına (titreşme/chatter) neden oluyordu.
+   - İki kademeli histerezis uygulandı: Noktaya ilk yakalanma eşiği 26 px (`SNAP_RADIUS_SQ`), aktif noktadan ayrılma/bırakma eşiği 42 px (`RELEASE_RADIUS_SQ`). Kullanıcı noktanın etrafında gezinirken ipucu asla kopmaz veya titreşmez.
+4. Sabit Ayrık Nokta Kilitlenmesi (Stationary Lock):
+   - Ayrık noktalarda (K-eff, nötron akısı, yanma adımları), fare aynı nokta üzerinde küçük hareketler yaparken gereksiz metin biçimlendirmesi, eksen dönüşümü ve tuval blit işlemi engellendi. Hedef nokta değişmedikçe 0 CPU yükü ile sıfır gecikme sağlandı.
+5. Precursor Yatay Çubuklarında Dikey Y Ekseni Sabitleme:
+   - Precursor grafiklerinde tooltip çapa noktası imlecin dikey titresiminden (`cursor_y`) izole edilerek çubuğun tam merkezine (`y_value`) kilitlendi; yatayda ise çubuk sınırları içinde yumuşakça akması sağlandı.
+
+========================================================================
+[v0.2.65.41] - Analysis Outputs Hover Ekranı Aşırı Kasma ve Gecikme Onarımı (Sıfır Gecikmeli Blitting & Vektörel Arama) (2026-10-04)
+------------------------------------------------------------------------
+KAPSAM:
+1. Donanımsal Blitting (Matplotlib Blit) ile Anlık (0-Lag) Hover Çizimi:
+   - Analysis Outputs grafiklerinde fare hareket ettikçe yaşanan aşırı kasma, gecikme ve takılmaların kök nedeni giderildi.
+   - Kök neden: Her fare hareketinde `self._canvas.draw_idle()` çağrılmasıydı. Matplotlib'in tam figür yeniden çizimi (eksenler, kılavuz çizgileri, veri eğrileri/çubukları, etiketler, başlıklar) olay başına 35-100 ms sürüyordu ve fare 120-250 Hz ile hareket ettiğinde Qt olay kuyruğu kilitleniyordu.
+   - `_annotation`, `_asymptote_vline` ve `_asymptote_hline` nesnelerine `set_animated(True)` verildi. Çizim tamamlandığında statik figür arka planı `copy_from_bbox` ile tampona alındı.
+   - Yeni `_blit_hover()` metodu ile her fare hareketinde statik arka plan `restore_region` ile geri yüklenip sadece hareketli hover çizgileri ve tooltip `draw_artist` ve `canvas.blit` ile ekrana basıldı. Hover kare çizim süresi 50 ms'den ~0.8-1 ms'ye düşürüldü (~50 kat hızlanma).
+   - Fare grafikten çıktığında (`figure_leave_event`) tooltip ve izdüşüm çizgileri 0.08 ms içinde anında ve temizce kaldırılır.
+2. Vektörel Koordinat Önbelleği (NumPy Spatial Search):
+   - Önceden her fare hareketinde `self._hover_points` içindeki tüm noktalar (yüzlerce veya binlerce veri noktası) tek tek Python döngüsünde `axes.transData.transform((x, y))` fonksiyonuna sokuluyordu (6-30 ms ek yük).
+   - `_ensure_hover_pixel_cache()` metodu eklendi: Eksen sınırları değişmedikçe tüm veri noktalarının piksel karşılıkları tek bir C seviyesi NumPy çağrısıyla hesaplanıp önbelleklenir.
+   - Fare hareketinde en yakın nokta `np.argmin(dist_sq)` ile 0.01 ms'de bulunur. 4 piksellik hantal kaba filtre kaldırılarak akıcı piksel altı (sub-pixel) takip sağlandı.
+
+========================================================================
+[v0.2.65.40] - Precursor Grafiği Uç Nokta Hover Bar Kısılması Onarımı ve Adaptif Tooltip Konumlandırma (2026-10-04)
+------------------------------------------------------------------------
+KAPSAM:
+1. Precursor ve Yatay Çubuk Grafiklerindeki Bar Kısılması (Squash/Shrink) Kök Neden Onarımı:
+   - Delayed Neutron Precursor Timeline ve yatay bar grafiklerinde, çubukların sağ ucuna fareyle gelindiğinde Matplotlib'in `constrained_layout` motorunun eksen kutusunu otomatik olarak daraltarak barları kısması/sıkıştırması hatası kökten giderildi.
+   - Kök neden: `self._annotation` nesnesinin ve asimptot izdüşüm çizgilerinin varsayılan `in_layout=True` bayrağı ile oluşturulması; sağ marj dışına taşan araç ipucunun yerleşim motoru tarafından çizim sınırlarını yeniden hesaplatmasıydı.
+   - `_setup_annotation` içinde `self._annotation.set_in_layout(False)`, `self._asymptote_vline.set_in_layout(False)`, `self._asymptote_hline.set_in_layout(False)` ve `set_time_cursor` içinde `self._time_cursor_line.set_in_layout(False)` uygulanarak eksen ve bar genişliğinin hover sırasında %100 sabit kalması sağlandı.
+2. Dinamik ve Adaptif Hover Tooltip Konumlandırma:
+   - Tooltip'in sabit sağ tarafta (`xytext=(12, 12)`) kalma zorunluluğu kaldırıldı. `_apply_adaptive_annotation_placement` metodu eklendi.
+   - Çubuk ucuna (sağ kenara) gelindiğinde yer kısıtı tespit edilerek ipucu sola açılır (`ha="right"`, `offset_x=-14`) ve çubuk ucuna dikeyde tam ortalanır (`va="center"`, `offset_y=0`).
+   - Yeterli alan olan orta bölgelerde nokta merkezli yatayda ortalanarak (`ha="center"`, `offset_x=0`, `va="bottom"`, `offset_y=14`) üste yerleşir. Sol kenarda ise sağa doğru dikeyde ortalı açılır.
+   - Üst/alt kenar yakınlıklarında kırpılmayı önlemek için dikey ofsetler (`va="top"`, `va="bottom"`) akıllıca dengelenir.
+3. K-eff, Precursor ve Genel Seri Eşgüdümü:
+   - Adaptif konumlandırma hem kategori/precursor çubuklarında hem K-eff yakınsama noktalarında hem de genel serilerde aktif kılındı.
+   - Kategori hover aralık mantığı (`0 <= event.xdata <= max(x_val * 1.15, x_val + 0.1)`) netleştirilerek çubuk bittiğinde boşlukta asılı kalma düzeltildi.
+
+========================================================================
+[v0.2.65.39] - Analysis Outputs Grafik ve Harita Görünümleri İçin Fit View (Görünümü Sığdır) Desteği (2026-10-04)
+------------------------------------------------------------------------
+KAPSAM:
+1. Analysis Outputs ve Pop-out Pencereleri İçin Fit View Yeteneği:
+   - Analysis Outputs ekranında üretilen tüm grafikler (k-eff yakınsama, nötron akısı spektrumu, tüketim (depletion) eğrileri, kinetik, dedektör eksenel/radyal profilleri, 2B ısı haritaları, radyal geometri haritaları) ve PPF Core Map için fit özelliği getirildi.
+   - Kullanıcı grafiğe fare tekerleği veya sürükleme ile aşırı yakınlaştığında ya da uzaklaştığında, orijinal kalibre edilmiş eksen sınırlarına ve sahne görünümüne anında geri dönebilir.
+2. Ortak Panel Buton Standartları ve Popout Assembly Canvas Uyumu:
+   - Popout Assembly Canvas panelinde bulunan `fit_btn` tasarım ve işlevi birebir benimsendi: `style_panel_button(btn, icon="fit", role="action")` standardı kullanılarak hem açık hem koyu temada tutarlı konsol/araç çubuğu görünümü sağlandı.
+   - Docked (ana pencere içi) Analysis Outputs araç çubuğuna `self.fit_view_btn`, ayrık pencere (`PopoutPlotDialog`) araç çubuğuna `self.fit_btn`, PPF montaj detay iletişim kutusuna (`PpfAssemblyPropertiesDialog`) `self.fit_btn` eklendi.
+   - Ayrık pencere durumundayken ana paneldeki butona tıklanması durumunda eylem pop-out pencereye güvenle iletilir.
+3. Tüm Grafik Türlerinde Kalibre Edilmiş Başlangıç Sınırları:
+   - `MatplotlibAnalysisCanvas` bileşeninde `render_series` ile birlikte `_render_heatmap` (2B PPF ısı haritası) ve `_render_geometry_core_map` (vektörel geometri haritası) çizimlerinde de eksen sınırları (`_initial_xlim`, `_initial_ylim`) güvenceye alındı; `reset_view`, `fit_view` ve `fit_scene` metodları birleştirildi.
+   - `PpfCoreGraphicsView` üzerinde `fit_scene`, `fit_view`, `reset_view` API uyumluluğu sağlandı ve overlay elemanlarının (HUD & Legend) hizalaması güncellendi.
+   - Command Palette'e "Fit Analysis Outputs Chart to Window" komutu eklendi.
+4. Doğrulama ve Testler:
+   - `tests/test_analysis_fit_view.py` (9/9 test OK), `tests/test_analysis_outputs_page.py` (7/7 test OK), `tests/test_version_policy.py` (1/1 test OK).
 
 ========================================================================
 [v0.2.64.39] - Malzeme Paneli ve Termal Saçılma Görünümü Çift Yönlü Geçiş Animasyonu (2026-10-04)

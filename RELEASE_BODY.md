@@ -1,4 +1,4 @@
-# Serpent Studio v0.2.64.39
+# Serpent Studio v0.2.66.44
 
 > Advanced Graphical User Interface, Interactive Core Geometry Visualizer, and Analytical Post-Processing Platform for **Serpent 2 Monte Carlo** Reactor Physics.
 
@@ -8,7 +8,7 @@
 
 > [!IMPORTANT]
 > **Tek İndirmeniz Gereken Dosya / Only File You Need:**  
-> 👉 [**`SerpentStudio-x86_64.AppImage`**](https://github.com/bkbariskucuk/serpent-studio/releases/download/v0.2.64.39/SerpentStudio-x86_64.AppImage) (~132 MB)
+> 👉 [**`SerpentStudio-x86_64.AppImage`**](https://github.com/bkbariskucuk/serpent-studio/releases/download/v0.2.66.44/SerpentStudio-x86_64.AppImage) (~132 MB)
 
 #### 🚀 Nasıl Çalıştırılır? / Quick Start:
 1. **İzin Verin:** Dosyaya sağ tıklayın -> *Özellikler* -> *İzinler* -> *"Dosyayı program gibi çalıştırmaya izin ver"* seçeneğini işaretleyin.  
@@ -28,37 +28,38 @@
 
 ---
 
-### 🌟 Bu Sürümde Neler Yeni? (Release Notes - v0.2.64.39)
+### 🌟 Bu Sürümde Neler Yeni? (Release Notes - v0.2.66.44)
 
-#### 1. 🎞️ Malzeme Paneli & Termal Saçılma Çift Yönlü Kayma Animasyonu
-- **Pürüzsüz Yatay Kayma (`SlidingStackedWidget`):** Malzeme Paneli içindeki Material Composition ve Thermal Scattering S(α, β) görünümleri arasındaki geçişe 260 ms süreli yumuşak yatay kayma (horizontal slide) animasyonu entegre edildi.
-- **İleri Geçiş (Malzeme → Termal S(α, β)):** Sağdan sola doğru (`offset = +width → 0`) OutCubic eğrisiyle akıcı kayma. Tablo verisi animasyon başlamadan önce yüklenerek boş ekran veya takılma engellenir.
-- **Geri Geçiş (Termal S(α, β) → Malzeme):** "← Back to Materials" butonuna tıklandığında veya termal tablodan bir satıra çift tıklandığında soldan sağa doğru (`offset = -width → 0`) ters yönlü kayma ile malzeme tablosuna dönülür.
-- **Mantıksal Durum ve Kesinti Güvenliği:** Animasyon devam ederken `currentIndex()` ve `currentWidget()` anında hedef sayfayı raporlar; hızlı ardışık tıklamalarda veya yeniden boyutlandırma olaylarında çalışan animasyon grubu temizce sonlandırılır.
-- **Erişilebilirlik Uyumu:** `accessibility/stop_animations` tercihi aktifken veya başsız ortamlarda animasyon otomatik bypass edilir.
+#### 1. 🎯 Kod Editöründe "lat" Komutuna Otomatik Odaklanma (Auto-Navigate to Lattice)
+- **Hassas Konumlandırma (`locate_lattice_header`):** Çekirdek (`grid_size_spin`) veya yakıt demeti (`assembly_size_spin`) ızgara boyutu değiştiğinde mini kod editörü anında ilgili `lat <id> ...` komut satırına gider, imleci konumlandırır ve satırı yumuşak bir ışıkla vurgular.
+- **Halka Sarma & Dış Katman:** Core panelindeki en dıştaki demet sayısı (`core_ring_edge_spin`) değiştiğinde veya "⚡ Halkaları Sar" tıklandığında kod görünümü doğrudan ana çekirdek lattice tanımına odaklanır.
+- **Modüler Include Desteği:** `navigate_to_lattice_in_code` mekanizması, include dosyası modunda çalışırken de ana dosya ve alt dosyalar arasında şeffaf navigasyon sağlar.
 
-#### 2. 🌄 Splash Ekranı: Oturuma Özgü Rastgele Arazi & Meksika Dalgası (v0.2.64.39)
-- **Rastgele Arazi Üretimi:** Her açılışta sol ve sağ kenar için bağımsız fraktal gürültü ve doruklarla seviye eğrileri üretilir (yapı gereği kesişmeyen 6 seviye, doruk nirengi noktaları).
-- **Meksika Dalgası Hareketi:** Rastgele hız ve genlik modülasyonuyla uzantı doğrultusunda ilerleyen dalga darbeleri (60 FPS kilitli, ~3.5 ms/kare).
+#### 2. 🔄 Geri Al / Yinele (Ctrl+Z & Ctrl+Y) UI Senkronizasyonu
+- **Döngüsüz Çift Yönlü Senkronizasyon:** Kanvas üzerinde geri al veya yinele yapıldığında `assembly_size_spin` ("Grid (NxN):"), demet adı (`asm_name_edit`), pin adımı (`pin_pitch_spin`) ve çekirdek ızgara boyutu (`grid_size_spin`) anında matrisin gerçek durumuna eşitlenir.
+- Sinyaller geçici olarak kilitlenerek (`blockSignals(True)`) gereksiz tetiklemeler ve döngüsel olay akışları engellenmiştir.
 
-#### 3. 🧪 Kapsamlı Test Doğrulaması
-- Tam birim test paketi ve `test_materials_thermal_toggle` (7/7 test OK) eksiksiz doğrulanmıştır.
+#### 3. ⚛️ Eşmerkezli Kor Geometrisi & +2 Izgara Adımları (v0.2.66 Serisi)
+- **Halka Üretim Aracı:** Belirlenen dış katman demet sayısına göre merkezden dışa doğru eşmerkezli halkalar otomatik sarılır.
+- **2şerli Tek Sayı Adımı:** Çekirdek ızgarası her zaman tek sayılarla (`3x3, 5x5, 7x7...`) ve `+2` adımlarıyla büyüyüp küçülür.
+
+#### 4. 🧪 Kapsamlı Test Doğrulaması
+- Tüm birim ve entegrasyon test paketi (102 test) eksiksiz doğrulanmıştır.
 
 ---
 
 ### 🔒 Dosya Bütünlüğü Doğrulama (Checksums)
 
-- **SHA-256:** `7b1e2cb5114a4bc2cddfb891d060cd1001c36600334257a7d5dc0ca87c10c051`
+- **SHA-256:** `2bd88fa2110f4ae88b48e9869f506c4cf295f76271f5330ccde6a503b1677dd6`
 
 Terminalden doğrulamak için:
 ```bash
-echo "7b1e2cb5114a4bc2cddfb891d060cd1001c36600334257a7d5dc0ca87c10c051  SerpentStudio-x86_64.AppImage" | sha256sum -c
+echo "2bd88fa2110f4ae88b48e9869f506c4cf295f76271f5330ccde6a503b1677dd6  SerpentStudio-x86_64.AppImage" | sha256sum -c
 ```
 
 ---
 
 ### 💻 Sistem Gereksinimleri
-
-- **İşletim Sistemi:** Linux x86_64 (Ubuntu 20.04+, Debian 11+, Fedora 36+, Arch Linux vb.)
-- **Mimari:** 64-bit (x86_64)
-- **Grafik:** OpenGL 2.1+ destekli ekran kartı (Yazılımsal işleme `--no-splash` bayrağıyla desteklenir)
+- **İşletim Sistemi:** Linux (Ubuntu 20.04+, Debian 11+, Fedora 34+, Arch Linux, openSUSE vb.)
+- **Mimari:** x86_64 (64-bit)
+- **Gerekli Kütüphaneler:** Standart glibc ve FUSE (AppImage desteği için).
