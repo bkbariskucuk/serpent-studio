@@ -1,12 +1,12 @@
 {
-  "latest_version": "v0.2.66.44",
+  "latest_version": "v0.2.68.48",
   "min_supported_version": "v0.2.50.00",
   "mandatory": false,
-  "release_date": "2026-10-05",
-  "release_title": "Serpent Studio v0.2.66.44",
-  "release_notes": "Eşmerkezli Kor Geometrisi, +2 Izgara Adımları, lat Komutu Odaklanması ve Undo/Redo Senkronizasyonu",
-  "sha256": "2bd88fa2110f4ae88b48e9869f506c4cf295f76271f5330ccde6a503b1677dd6",
-  "file_size_bytes": 140651000,
-  "download_url": "https://github.com/bkbariskucuk/serpent-studio/releases/download/v0.2.66.44/SerpentStudio-x86_64.AppImage",
-  "zsync_url": "https://github.com/bkbariskucuk/serpent-studio/releases/download/v0.2.66.44/SerpentStudio-x86_64.AppImage.zsync"
+  "release_date": "2026-10-10",
+  "release_title": "Serpent Studio v0.2.68.48",
+  "release_notes": "Granüler GUI Panel/Modül Kısıtlama Sistemi, Dinamik Özel Rol/Keyword Etiketleri ve Canlı İzin Senkronizasyonu",
+  "sha256": "118a3a08cfdeb72919219355497d7a2d3026a42c9f7906f5a0a1a6aa32f3fc55",
+  "file_size_bytes": 140732920,
+  "download_url": "https://github.com/bkbariskucuk/serpent-studio/releases/download/v0.2.68.48/SerpentStudio-x86_64.AppImage",
+  "zsync_url": "https://github.com/bkbariskucuk/serpent-studio/releases/download/v0.2.68.48/SerpentStudio-x86_64.AppImage.zsync"
 }
