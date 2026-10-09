@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: serpent-studio
+    env: python
+    buildCommand: "pip install --upgrade pip"
+    startCommand: "python server/control_plane.py"
+    plan: free
+    autoDeploy: true
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: SERPENT_ADMIN_USER
+        value: admin
+      - key: SERPENT_ADMIN_PASS
+        value: serpent2026

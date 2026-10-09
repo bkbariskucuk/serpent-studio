@@ -1,6 +1,6 @@
 ========================================================================
                           SERPENT STUDIO - SÜRÜM NOTLARI
-                                 Sürüm: v0.2.66.44
+                                  Sürüm: v0.2.67.48
 ========================================================================
 
 [SÜRÜM NUMARALANDIRMA VE BAĞIMSIZ SAYAÇ POLİTİKASI (GEÇERLİ 4 KADEMELİ STANDART)]
@@ -24,6 +24,110 @@
 - Bu dönüşüm yalnızca sürüm notu gösterim standardıdır; geçmiş anlık görüntülerin, manifestoların veya çalışma dosyalarının içeriği değiştirilmez.
 - Kullanılmayan bir sayaç değeri atlanmışsa ilgili sürüm başlığında bunun yayımlanmadığı açıkça belirtilir.
 - Bu tarihçede `v0.1.17.15` kaydı yayımlanmamıştır; sonraki kayıt `v0.1.17.16` olarak devam eder.
+
+========================================================================
+[v0.2.67.48] - Merkezi Kontrol Düzlemi (Control Plane), Admin Web Paneli, Sıfır Güncellemeli Kullanıcı Yönetimi ve Tester Hata/Çökme Telemetrisi (2026-10-10)
+------------------------------------------------------------------------
+KAPSAM:
+1. Merkezi Yönetim Sunucusu ve Admin Web Paneli (`server/control_plane.py`):
+   - Harici paket bağımlılığı bulunmayan (yalnızca Python standart kütüphanesi ve SQLite), tek komutla ayağa kalkan yönetim sunucusu geliştirildi (`GET /admin`).
+   - Yönetici Web Paneli üzerinden kullanıcı oluşturma, ilk şifre atama, rol belirleme ve tek tıkla hesabı anında askıya alma (Suspend / Kill-Switch) özellikleri eklendi.
+   - Masaüstü uygulamasında kullanıcı açmak için YENİ BİR DERLEME / GÜNCELLEME İHTİYACI TAMAMEN ORTADAN KALDIRILDI.
+2. Tester Hata ve Çökme Takibi (Crash & Exception Reporting):
+   - `core/telemetry.py` modülü altında `TelemetryManager` ve `_RecentLogBufferHandler` geliştirildi.
+   - `main.py` içerisindeki `_global_exception_handler` kancası telemetriye bağlandı. Tester arkadaşınızın karşılaştığı tüm unhandled exception'lar, Python traceback'i, son log satırları, aktif sekme, işletim sistemi ve uygulama sürüm bilgisiyle anlık olarak Admin Web Paneline kaydedilir.
+3. Uzaktan Oturum Kısıtlama ve Güvenlik Bekçisi (`SessionGuard`):
+   - Masaüstü istemcide çalışan `SessionGuard` (QTimer tabanlı asenkron heartbeat) entegre edildi.
+   - Yönetici web panelinden tester hesabını askıya aldığı anda kullanıcı oturumu düşürülür (`logout`), arayüz kilitlenir ve bilgilendirici diyalog gösterilir.
+DOĞRULAMA:
+- `tests/test_control_plane_and_telemetry.py`:
+  * Kullanıcı oluşturma, yetkilendirme, uzaktan kısıtlama (suspension) ve oturum düşürme doğrulandı.
+  * Hata ve çökme raporu alımı ve veritabanı kaydı doğrulandı.
+  * `SessionGuard` sinyal yayılımı test edildi (4/4 test OK).
+- `tests/test_auth.py` (11/11 test OK), `tests/test_version_policy.py` (1/1 test OK).
+
+========================================================================
+[v0.2.66.48] - PPF Canvas Çekirdek Haritası Büyütme ve Eksenel Profil (Axial Profile) Orantılı Boyutlandırması (2026-10-09)
+------------------------------------------------------------------------
+KAPSAM:
+1. Eksenel Güç Profili (Axial Profile Fz) Orantılı ve Zarif Yeniden Boyutlandırma:
+   - PPF ekranında çekirdek haritasının yanında orantısız şekilde devasa kalan ve sahne sınırlarını şişiren dikey eksenel profil çubuğu kompakt ve dengeli oranlara kavuşturuldu.
+   - Çubuk yüksekliği çekirdek haritası merkezine dikeyde ortalandı (`core_mid_y`) ve `h_bar = core_h * 0.72` oranına çekildi.
+   - Çubuk kalınlığı `w_bar = max(5.0, min(8.0, cell_w * 0.35))` (eski: ~0.85x), eğri genişliği `curve_w = max(9.0, min(14.0, cell_w * 0.60))` (eski: 2.2x), kor-profil arası boşluk `gap = max(10.0, min(18.0, cell_w * 0.75))` (eski: 0.12x core_w / min 24) olarak optimize edildi.
+   - Başlık ve yükseklik işaretleme (tick) tipografisi sıkılaştırılarak (`lbl_font = cell_w * 0.11`, `tick_font = cell_w * 0.09`) başlığın sahnenin üstüne gereksiz taşması engellendi.
+2. PPF Çekirdek Haritası Görünüm Büyütmesi (Sahne Zoom İyileştirmesi):
+   - `fit_scene` otomatik sığdırma yöntemindeki `padding_ratio` 0.035 değerinden 0.010'a, taban kenar payı 4.0'dan 2.0'a çekildi.
+   - Eksenel profilin dikey ve yatayda sebep olduğu sahne şişmesi giderildiği için `fitInView` hesaplamasında PPF çekirdek haritası görünüm alanı yaklaşık %58 daha büyük ve net hale getirildi.
+DOĞRULAMA:
+- `tests/test_ppf_canvas_rendering.py`:
+  * `test_axial_bar_rendering_and_slices`: Eksenel profil dilimleri ve yeni orantılı boyutlandırma (width <= 8.0, zoom = 1.0) doğrulandı.
+  * Tüm PPF canvas testleri (10/10) eksiksiz geçti.
+- `tests/test_analysis_fit_view.py`: Fit scene ve view limitleri doğrulandı.
+- `tests/test_version_policy.py`: 4 kademeli sürüm politikası doğrulandı.
+
+========================================================================
+[v0.2.66.47] - PPF Canvas Demet İçi PPF Yazı Restorasyonu, 2 Ondalıklı Zarif Tipografi ve Taşmayı Önleyici Ölçekleme (2026-10-09)
+------------------------------------------------------------------------
+KAPSAM:
+1. PPF Canvas (`PpfCoreGraphicsView`) Demet Etiketlerinin Restorasyonu ve Okunabilirlik:
+   - Demet içi değer formatı `f"{float(ppf_val):.2f}"` (2 ondalık basamak) biçimine dönüştürüldü. Çekirdek haritalarındaki nükleer mühendislik standartlarına tam uyum sağlanarak hücre içi aşırı metin kalabalığı ve görsel bozulma giderildi.
+   - Demet hücre boyutu çarpanı Core Canvas standartlarına (`0.13x`, `font_size = max(3, min(6, int(this_cell_w * 0.13)))`) çekilerek aşırı büyük font kullanımı önlendi.
+2. Taşmayı Önleyici (Anti-Overflow) Otomatik Sınır Boyutlandırması ve Merkezleme:
+   - Hücre bazında genişlik ve yükseklik sınırları (`max_w = this_cell_w * 0.68`, `max_h = this_cell_h * 0.45`) getirilerek metin boyutunun hücre sınırlarını aşması durumunda dinamik `setScale(s_ratio)` koruması uygulandı.
+   - Metin öğelerinin sahne koordinatlarında demet merkezine (`cx, -cy`) kusursuz hizalanması güvenceye alındı; hiçbir altıgen veya kare demet sınırından metin taşması meydana gelmez.
+3. Palet ve Aydınlık Uyumlu Kontrast Renk Belirleme:
+   - Seçili tüm renk skalaları (YlOrRd, Viridis vb.) ve açık/koyu temalar için lüminesans tabanlı dinamik metin rengi (`#FFFFFF` vs `#0F172A`) entegre edildi.
+DOĞRULAMA:
+- `tests/test_ppf_canvas_rendering.py`:
+  * `test_assembly_text_labels_fit_without_overflow`: 2 ondalıklı biçimlendirme, hücre içi sınır koruması ve merkezleme doğrulandı.
+- `tests/test_version_policy.py` test edildi ve geçti.
+
+========================================================================
+[v0.2.66.46] - Ctrl Kısayol Tuşu Kombinasyonları ve Spinbox/Parametre Değişimlerinde Grup Tabanlı Geri Al / Yinele (Ctrl+Z / Ctrl+Y) İyileştirmesi (2026-10-09)
+------------------------------------------------------------------------
+KAPSAM:
+1. Spinbox ve Metin Kutularında Ctrl Kısayollarının Yutulması Sorununun Giderilmesi:
+   - `ModernSpinBox` ve `ModernDoubleSpinBox` alt yapısındaki `_ModernSpinBase.eventFilter` genişletilerek iç `QLineEdit` bileşeninin `Ctrl+Z` (Geri Al), `Ctrl+Y` / `Ctrl+Shift+Z` (Yinele) ve sekmeler arası geçiş kısayollarını (`Ctrl+1..7`, `Ctrl+S`, vb.) yerel olarak yutması engellendi.
+   - Değer girişinde bekleyen metin önce otomatik commit edilir, ardından `MainWindow.handle_undo_action` / `handle_redo_action` tetiklenir.
+   - `MainWindow.eventFilter` metodunda tuval sekmelerinde (`tab_assembly`, `tab_geometry`) odak `QLineEdit` üzerinde olsa bile kısayolların doğrudan `handle_undo_action` ve `handle_redo_action` akışına yönlendirilmesi sağlandı.
+2. Parametre ve Adım (Pitch / Name / Size) Değişimlerinde Grup Tabanlı Geri Al / Yinele:
+   - Kullanıcı bir spinbox'ta (örneğin demet pin adımı veya kor adımı) ardışık olarak tuşlarla veya stepper butonlarıyla ilerlediğinde (örn. 1.26 -> 1.36 -> 1.46 -> 1.76), her mikro adımda gereksiz ara durumlar yığına itilmek yerine oturum tabanlı (session-based) yaklaşım getirildi.
+   - İlk müdahale anındaki başlangıç taban değeri (`baseline`) kaydedilir (`_spin_undo_active`), 800 ms'lik debounced oturum süresince ara değerler tuvale ve modele canlı yansıtılır.
+   - Kullanıcı tek bir `Ctrl+Z` yaptığında, doğrudan müdahale öncesindeki ilk başlangıç değerine (1.26) dönülür.
+   - Kullanıcı `Ctrl+Y` yaptığında ise ulaşılan en son değiştirilmiş değere (1.76) tek adımda geri dönülür.
+   - Demet adı (`asm_name_edit`), pin adımı (`on_pin_pitch_changed`), kor adımı (`on_core_pitch_changed`) ve kor taban adımı (`_last_core_pitch`) tam uyumlu hale getirildi.
+DOĞRULAMA:
+- `tests/test_pitch_spinbox_synchronization.py` (7/7 test başarılı):
+  * `test_assembly_pitch_spinbox_updates_model_canvas_and_specs`
+  * `test_core_pitch_spinbox_updates_canvas_and_clears_imported_radius`
+  * `test_undo_redo_preserves_pitch_state`
+  * `test_grouped_undo_redo_pin_pitch_session`: 1.26 -> 1.76 adımlamasında tek Ctrl+Z ile 1.26'ya, tek Ctrl+Y ile 1.76'ya dönüldüğü doğrulandı.
+  * `test_grouped_undo_redo_core_pitch_session`: Kor adımı değişiminde başlangıç tabanına ve son değere tek işlemle dönüldüğü doğrulandı.
+  * `test_ctrl_z_ctrl_y_event_filter_interception_when_focused`: Odak spinbox içindeki QLineEdit'te iken Ctrl+Z ve Ctrl+Y tuş olaylarının doğru yakalanıp uygulandığı doğrulandı.
+  * `test_assembly_name_undo_redo_session`: Demet adı düzenlemesinde Ctrl+Z / Ctrl+Y oturum senkronizasyonu doğrulandı.
+
+========================================================================
+[v0.2.66.45] - Assembly ve Core Editörlerinde Pitch Spinbox Değişimlerinde Tuval Geometrisi ve Model Senkronizasyonu (2026-10-09)
+------------------------------------------------------------------------
+KAPSAM:
+1. Assembly Editöründe Pin Pitch (`pin_pitch_spin`) Tuval ve Model Senkronizasyonu:
+   - `on_pin_pitch_changed` metodu eklendi ve `pin_pitch_spin.valueChanged` sinyaline bağlandı.
+   - Değer değiştiğinde `custom_assembly_info[cur_asm]["pitch"]` anında güncellenerek model doğruluğu sağlandı.
+   - Tuval çiziminde (`_draw_assembly_canvas_internal`) sabit kodlanmış piksel boyutları (`cell_size = 32.0`, `hex_pitch = 28.0`, `pitch = 28.0`) kaldırılarak fiziksel `assembly_pitch_cm * asm_scale` (25.0 px/cm) bağıntısına geçirildi.
+   - `asm_view._units_per_cm = 25.0` kalibrasyonu yapılarak ölçüm cetvelinin (`asm_measure_btn`) ve koordinat göstergelerinin tam cm cinsinden doğru değer vermesi sağlandı.
+   - Demet özellikleri ağacına (`asm_spec_tree`) "Pin Pitch" ve "Assembly Pitch" satırları eklendi.
+2. Core Editöründe Kor Pitch (`pitch_spin`) ve Reflektör İyileştirmesi:
+   - `pitch_spin.valueChanged` sinyali `on_core_pitch_changed` metoduna bağlandı (`preserve_view=True` ile odak ve yakınlaştırma kilitlendi).
+   - Pitch manuel değiştirildiğinde `imported_core_radius_cm` ve `imported_outer_radius_cm` kilitleri sıfırlanarak kor sınırlarının ve yansıtıcının yeni adıma tam uyum sağlaması garantilendi.
+   - `build_assembly_detail` raster önbellek anahtarına `pin_pitch_cm` parametresi eklenerek pin detayı görünümünde önbellek tutarlılığı sağlandı.
+3. Geri Al / Yinele (Undo / Redo) Entegrasyonu:
+   - `custom_assembly_info` ve `core_pitch` parametreleri geri alma ve yineleme durumlarına dahil edildi.
+DOĞRULAMA:
+- `tests/test_pitch_spinbox_synchronization.py` (3/3 test başarılı):
+  * `test_assembly_pitch_spinbox_updates_model_canvas_and_specs`: Spinbox değişiminde model, ölçek, ağaç ve tuval sınırlarının güncellendiği doğrulandı.
+  * `test_core_pitch_spinbox_updates_canvas_and_clears_imported_radius`: Core pitch değişiminde ithal kilitlerin sıfırlandığı ve kor sınırlarının güncellendiği doğrulandı.
+  * `test_undo_redo_preserves_pitch_state`: Geri al ve yinele adımlarında adım değerlerinin korunduğu doğrulandı.
+- `tests/test_umay_pitch_assembly_count.py`, `tests/test_concentric_rings_and_grid_steps.py`, `tests/test_advanced_canvas_features.py`, `tests/test_version_policy.py` test edildi ve geçti.
 
 ========================================================================
 [v0.2.66.44] - Ctrl+Z ve Ctrl+Y (Geri Al / Yinele) Sırasında Assembly & Core Izgara Sayılarının UI Senkronizasyonu (2026-10-05)
