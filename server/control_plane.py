@@ -124,6 +124,13 @@ class Database:
                 """, (_ADMIN_DEFAULT_USER, h, s, time.time()))
                 conn.commit()
 
+            # Ensure restricted_panels column exists
+            cursor.execute("PRAGMA table_info(users)")
+            cols = [r["name"] for r in cursor.fetchall()]
+            if "restricted_panels" not in cols:
+                cursor.execute("ALTER TABLE users ADD COLUMN restricted_panels TEXT DEFAULT '[]'")
+                conn.commit()
+
     def get_user(self, username: str) -> Optional[Dict[str, Any]]:
         with self._lock, self._get_conn() as conn:
             cur = conn.cursor()
@@ -140,7 +147,8 @@ class Database:
 
     def create_user(
         self, username: str, password: str, role: str = "tester",
-        display_name: str = "", expires_at: Optional[float] = None
+        display_name: str = "", expires_at: Optional[float] = None,
+        restricted_panels: Optional[List[str]] = None,
     ) -> Tuple[bool, str]:
         u = username.strip().lower()
         if not u or len(u) < 3:
@@ -149,17 +157,33 @@ class Database:
             return False, "Password must be at least 4 characters."
 
         h, s = hash_password(password)
+        panels_json = json.dumps(restricted_panels or [])
         with self._lock, self._get_conn() as conn:
             cur = conn.cursor()
             try:
                 cur.execute("""
-                    INSERT INTO users (username, password_hash, salt, role, display_name, is_active, created_at, expires_at)
-                    VALUES (?, ?, ?, ?, ?, 1, ?, ?)
-                """, (u, h, s, role, display_name or u, time.time(), expires_at))
+                    INSERT INTO users (username, password_hash, salt, role, display_name, is_active, created_at, expires_at, restricted_panels)
+                    VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?)
+                """, (u, h, s, role.strip(), display_name or u, time.time(), expires_at, panels_json))
                 conn.commit()
                 return True, "User created successfully."
             except sqlite3.IntegrityError:
                 return False, f"User '{u}' already exists."
+
+    def set_user_restrictions(self, username: str, restricted_panels: List[str]) -> bool:
+        panels_json = json.dumps(restricted_panels or [])
+        with self._lock, self._get_conn() as conn:
+            cur = conn.cursor()
+            cur.execute("UPDATE users SET restricted_panels = ? WHERE username = ?", (panels_json, username.strip().lower()))
+            conn.commit()
+            return cur.rowcount > 0
+
+    def set_user_role(self, username: str, role: str) -> bool:
+        with self._lock, self._get_conn() as conn:
+            cur = conn.cursor()
+            cur.execute("UPDATE users SET role = ? WHERE username = ?", (role.strip(), username.strip().lower()))
+            conn.commit()
+            return cur.rowcount > 0
 
     def set_user_status(self, username: str, is_active: bool) -> bool:
         with self._lock, self._get_conn() as conn:
@@ -192,14 +216,22 @@ class Database:
         with self._lock, self._get_conn() as conn:
             cur = conn.cursor()
             cur.execute("""
-                SELECT u.id, u.username, u.role, u.display_name, u.is_active, u.created_at, u.expires_at,
+                SELECT u.id, u.username, u.role, u.display_name, u.is_active, u.created_at, u.expires_at, u.restricted_panels,
                        MAX(s.last_heartbeat) as last_seen, MAX(s.client_version) as client_version
                 FROM users u
                 LEFT JOIN sessions s ON u.id = s.user_id AND s.is_revoked = 0
                 GROUP BY u.id
                 ORDER BY u.created_at DESC
             """)
-            return [dict(r) for r in cur.fetchall()]
+            users = []
+            for r in cur.fetchall():
+                d = dict(r)
+                try:
+                    d["restricted_panels"] = json.loads(d.get("restricted_panels") or "[]")
+                except Exception:
+                    d["restricted_panels"] = []
+                users.append(d)
+            return users
 
     def create_session(self, user_id: int, username: str, client_version: str = "", platform: str = "") -> str:
         token = secrets.token_hex(24)
@@ -219,7 +251,7 @@ class Database:
         with self._lock, self._get_conn() as conn:
             cur = conn.cursor()
             cur.execute("""
-                SELECT s.*, u.is_active, u.role, u.expires_at
+                SELECT s.*, u.is_active, u.role, u.expires_at, u.restricted_panels
                 FROM sessions s
                 JOIN users u ON s.user_id = u.id
                 WHERE s.token = ? AND s.is_revoked = 0
@@ -414,6 +446,10 @@ class ControlPlaneHandler(http.server.BaseHTTPRequestHandler):
                 return
 
             token = self.db.create_session(user["id"], user["username"], client_version, platform)
+            try:
+                restricted_panels = json.loads(user.get("restricted_panels") or "[]")
+            except Exception:
+                restricted_panels = []
             self._send_json(200, {
                 "status": "success",
                 "message": "Authentication successful",
@@ -423,7 +459,9 @@ class ControlPlaneHandler(http.server.BaseHTTPRequestHandler):
                     "role": user["role"],
                     "display_name": user["display_name"],
                     "is_active": bool(user["is_active"]),
-                }
+                    "restricted_panels": restricted_panels,
+                },
+                "restricted_panels": restricted_panels,
             })
             return
 
@@ -439,10 +477,17 @@ class ControlPlaneHandler(http.server.BaseHTTPRequestHandler):
                 })
                 return
 
+            try:
+                restricted_panels = json.loads(session_data.get("restricted_panels") or "[]")
+            except Exception:
+                restricted_panels = []
+
             self._send_json(200, {
                 "status": "ok",
                 "account_status": "active",
                 "username": session_data["username"],
+                "role": session_data.get("role", "tester"),
+                "restricted_panels": restricted_panels,
                 "message": "Heartbeat acknowledged"
             })
             return
@@ -501,13 +546,34 @@ class ControlPlaneHandler(http.server.BaseHTTPRequestHandler):
                 return
 
             if path == "/admin/api/users/create":
+                panels = body.get("restricted_panels", [])
                 ok, msg = self.db.create_user(
                     username=str(body.get("username", "")),
                     password=str(body.get("password", "")),
                     role=str(body.get("role", "tester")),
                     display_name=str(body.get("display_name", "")),
+                    restricted_panels=panels if isinstance(panels, list) else [],
                 )
                 self._send_json(200 if ok else 400, {"status": "ok" if ok else "error", "message": msg})
+                return
+
+            if path == "/admin/api/users/set-restrictions":
+                u = str(body.get("username", "")).strip().lower()
+                panels = body.get("restricted_panels", [])
+                if not isinstance(panels, list):
+                    panels = []
+                ok = self.db.set_user_restrictions(u, panels)
+                self._send_json(200 if ok else 400, {"status": "ok" if ok else "error", "restricted_panels": panels})
+                return
+
+            if path == "/admin/api/users/set-role":
+                u = str(body.get("username", "")).strip().lower()
+                role = str(body.get("role", "tester")).strip()
+                if not role:
+                    self._send_json(400, {"status": "error", "message": "Role cannot be empty."})
+                    return
+                ok = self.db.set_user_role(u, role)
+                self._send_json(200 if ok else 400, {"status": "ok" if ok else "error", "role": role})
                 return
 
             if path == "/admin/api/users/toggle-status":
@@ -549,12 +615,13 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
       --accent: #38BDF8;
       --accent-hover: #0284C7;
       --danger: #EF4444;
+      --danger-hover: #DC2626;
       --success: #10B981;
       --warning: #F59E0B;
     }
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
-    body { background: var(--bg); color: var(--text); padding: 24px; }
-    .container { max-width: 1200px; margin: 0 auto; }
+    body { background: var(--bg); color: var(--text); padding: 24px; min-height: 100vh; }
+    .container { max-width: 1240px; margin: 0 auto; }
     header { display: flex; justify-content: space-between; align-items: center; padding-bottom: 20px; border-bottom: 1px solid var(--border); margin-bottom: 24px; }
     h1 { font-size: 22px; font-weight: 700; color: #fff; display: flex; align-items: center; gap: 10px; }
     .badge { font-size: 11px; padding: 3px 8px; border-radius: 99px; background: rgba(56, 189, 248, 0.15); color: var(--accent); }
@@ -563,7 +630,7 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
     .tab-btn.active { background: var(--accent); color: #000; border-color: var(--accent); }
     .card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 12px; padding: 20px; margin-bottom: 24px; box-shadow: 0 4px 16px rgba(0,0,0,0.3); }
     table { width: 100%; border-collapse: collapse; margin-top: 12px; }
-    th, td { text-align: left; padding: 12px 14px; border-bottom: 1px solid var(--border); font-size: 14px; }
+    th, td { text-align: left; padding: 12px 14px; border-bottom: 1px solid var(--border); font-size: 14px; vertical-align: middle; }
     th { color: var(--text-muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; }
     .status-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
     .status-active { background: var(--success); }
@@ -571,14 +638,106 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
     button.btn { background: var(--accent); color: #000; border: none; padding: 8px 14px; border-radius: 6px; font-weight: 600; cursor: pointer; transition: 0.2s; }
     button.btn:hover { background: var(--accent-hover); }
     button.btn-danger { background: var(--danger); color: #fff; }
+    button.btn-danger:hover { background: var(--danger-hover); }
     button.btn-warning { background: var(--warning); color: #000; }
+    button.btn-secondary { background: #374151; color: #fff; }
+    button.btn-secondary:hover { background: #4B5563; }
     button.btn-sm { padding: 4px 8px; font-size: 12px; }
-    .form-row { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 12px; }
+    .form-row { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 12px; align-items: center; }
     input, select { background: #1F2937; border: 1px solid #374151; color: #fff; padding: 10px 14px; border-radius: 6px; font-size: 14px; outline: none; }
     input:focus { border-color: var(--accent); }
-    pre { background: #000; padding: 12px; border-radius: 8px; color: #E5E7EB; font-size: 12px; overflow-x: auto; white-space: pre-wrap; max-height: 350px; }
-    .modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7); justify-content: center; align-items: center; z-index: 1000; }
-    .modal-content { background: var(--card-bg); border: 1px solid var(--border); padding: 24px; border-radius: 12px; max-width: 750px; width: 90%; max-height: 85vh; overflow-y: auto; }
+    pre { background: #000; padding: 12px; border-radius: 8px; color: #E5E7EB; font-size: 12px; overflow-x: auto; white-space: pre-wrap; max-height: 380px; }
+    .modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.75); justify-content: center; align-items: center; z-index: 1000; }
+    .modal-content { background: var(--card-bg); border: 1px solid var(--border); padding: 24px; border-radius: 12px; max-width: 800px; width: 92%; max-height: 88vh; overflow-y: auto; }
+    
+    .pill-btn {
+      display: inline-block;
+      background: rgba(56, 189, 248, 0.12);
+      border: 1px solid rgba(56, 189, 248, 0.35);
+      color: var(--accent);
+      padding: 3px 10px;
+      border-radius: 99px;
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s;
+      user-select: none;
+    }
+    .pill-btn:hover { background: var(--accent); color: #000; }
+    
+    .role-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      cursor: pointer;
+      transition: all 0.2s;
+      background: rgba(56, 189, 248, 0.15);
+      color: var(--accent);
+      padding: 3px 8px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 600;
+      border: 1px solid rgba(56, 189, 248, 0.25);
+    }
+    .role-badge:hover { background: rgba(56, 189, 248, 0.3); border-color: var(--accent); }
+
+    .restriction-pill {
+      font-size: 11px;
+      padding: 3px 8px;
+      border-radius: 99px;
+      background: rgba(239, 68, 68, 0.15);
+      color: var(--danger);
+      border: 1px solid rgba(239, 68, 68, 0.35);
+      font-weight: 600;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .ok-pill {
+      font-size: 11px;
+      padding: 3px 8px;
+      border-radius: 99px;
+      background: rgba(16, 185, 129, 0.15);
+      color: var(--success);
+      border: 1px solid rgba(16, 185, 129, 0.35);
+      font-weight: 600;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .panel-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+      gap: 12px;
+      margin: 16px 0;
+    }
+    .panel-card {
+      background: #1F2937;
+      border: 1px solid #374151;
+      border-radius: 8px;
+      padding: 12px;
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      cursor: pointer;
+      transition: border-color 0.2s, background 0.2s;
+      user-select: none;
+    }
+    .panel-card:hover { border-color: var(--accent); }
+    .panel-card.active-restricted {
+      background: rgba(239, 68, 68, 0.12);
+      border-color: rgba(239, 68, 68, 0.5);
+    }
+    .panel-card input[type="checkbox"] {
+      margin-top: 3px;
+      cursor: pointer;
+      accent-color: var(--danger);
+      width: 16px;
+      height: 16px;
+    }
+    .panel-title { font-size: 13px; font-weight: 600; color: #F3F4F6; display: flex; align-items: center; gap: 6px; }
+    .panel-desc { font-size: 11px; color: var(--text-muted); margin-top: 4px; line-height: 1.35; }
   </style>
 </head>
 <body>
@@ -602,34 +761,45 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
       <div class="card">
         <h3>➕ Yeni Tester / Kullanıcı Oluştur (Uygulama Güncellemesi GEREKTİRMEZ)</h3>
         <p style="color: var(--text-muted); font-size: 13px; margin-top: 4px;">Buradan belirleyeceğiniz hesap ve şifre masaüstü uygulamasında anında geçerli olur.</p>
+        
         <div class="form-row">
-          <input type="text" id="newUsername" placeholder="Kullanıcı Adı (örn: tester_ali)">
-          <input type="text" id="newPassword" placeholder="İlk Şifre (örn: 123456)">
-          <input type="text" id="newDisplayName" placeholder="İsim (örn: Ali Mühendis)">
-          <select id="newRole">
-            <option value="tester">Tester</option>
-            <option value="researcher">Araştırmacı</option>
-            <option value="administrator">Yönetici</option>
-          </select>
+          <input type="text" id="newUsername" placeholder="Kullanıcı Adı (örn: tester_ali)" style="flex:1; min-width: 150px;">
+          <input type="text" id="newPassword" placeholder="İlk Şifre (örn: 123456)" style="flex:1; min-width: 140px;">
+          <input type="text" id="newDisplayName" placeholder="İsim (örn: Ali Mühendis)" style="flex:1; min-width: 150px;">
+          <input type="text" id="newRole" placeholder="Rol / Keyword (örn: tester)" value="tester" style="flex:1; min-width: 150px;">
           <button class="btn" onclick="createUser()">Kullanıcıyı Kaydet</button>
+        </div>
+
+        <div style="display: flex; align-items: center; gap: 6px; margin-top: 10px; flex-wrap: wrap;">
+          <span style="font-size: 12px; color: var(--text-muted);">Hızlı Rol / Keyword Seçin veya Yazın:</span>
+          <span class="pill-btn" onclick="setRole('tester')">+ Tester</span>
+          <span class="pill-btn" onclick="setRole('araştırmacı')">+ Araştırmacı</span>
+          <span class="pill-btn" onclick="setRole('öğrenci')">+ Öğrenci</span>
+          <span class="pill-btn" onclick="setRole('stajyer')">+ Stajyer</span>
+          <span class="pill-btn" onclick="setRole('nükleer-mühendis')">+ Nükleer Mühendis</span>
+          <span class="pill-btn" onclick="setRole('proje-ekibi')">+ Proje Ekibi</span>
+          <span class="pill-btn" onclick="setRole('misafir')">+ Misafir</span>
+          <span class="pill-btn" onclick="setRole('administrator')">+ Yönetici</span>
         </div>
       </div>
 
       <div class="card">
         <h3>📋 Kayıtlı Kullanıcılar & Uzaktan Kısıtlama Denetimi</h3>
+        <p style="color: var(--text-muted); font-size: 13px; margin-top: 4px;">Kullanıcıların erişebileceği panelleri buradan kısıtlayabilir veya hesaplarını anında askıya alabilirsiniz.</p>
         <table>
           <thead>
             <tr>
               <th>Kullanıcı Adı</th>
               <th>İsim</th>
-              <th>Rol</th>
+              <th>Rol / Keyword</th>
               <th>Durum</th>
-              <th>Son Görülme (Heartbeat)</th>
+              <th>Panel Kısıtları</th>
+              <th>Son Görülme</th>
               <th>İşlemler</th>
             </tr>
           </thead>
           <tbody id="usersTableBody">
-            <tr><td colspan="6" style="text-align: center; color: var(--text-muted);">Yükleniyor...</td></tr>
+            <tr><td colspan="7" style="text-align: center; color: var(--text-muted);">Yükleniyor...</td></tr>
           </tbody>
         </table>
       </div>
@@ -681,7 +851,7 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
     </div>
   </div>
 
-  <!-- MODAL FOR ERROR TRACEBACK / SCRIPT -->
+  <!-- MODAL: DETAIL (TRACEBACK / SCRIPT) -->
   <div class="modal" id="detailModal">
     <div class="modal-content">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
@@ -692,8 +862,61 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
     </div>
   </div>
 
+  <!-- MODAL: PANEL RESTRICTIONS -->
+  <div class="modal" id="restrictionsModal">
+    <div class="modal-content">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+        <div>
+          <h3>🛡️ Panel ve Modül Kısıtlamaları</h3>
+          <p style="color: var(--text-muted); font-size: 13px; margin-top: 2px;">
+            Kullanıcı: <strong id="modalRestrictUsername" style="color: var(--accent);"></strong>
+          </p>
+        </div>
+        <button class="btn btn-sm btn-danger" onclick="closeRestrictionsModal()">Kapat</button>
+      </div>
+
+      <div style="background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.3); border-radius: 8px; padding: 10px 14px; margin: 12px 0; font-size: 13px; color: #FCA5A5;">
+        ⚠️ <strong>İşleyiş:</strong> İşaretlediğiniz paneller kullanıcının masaüstü uygulamasında anında devre dışı bırakılır ve gizlenir. Kullanıcı uygulamayı yeniden başlatmasa bile sonraki heartbeat (en geç 60 sn) ile canlı olarak güncellenir.
+      </div>
+
+      <!-- Quick Preset Buttons -->
+      <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px;">
+        <button class="btn btn-sm btn-secondary" onclick="setPresetRestrictions([])">🔓 Tümünü Aç</button>
+        <button class="btn btn-sm btn-secondary" onclick="setPresetRestrictions(ALL_PANEL_IDS)">🛑 Tümünü Kısıtla</button>
+        <button class="btn btn-sm btn-secondary" onclick="setPresetRestrictions(['materials','assembly','geometry','control_rods','detectors','coefficients','simulation','settings','console'])">📊 Salt Okunur (Sadece Sonuç İnceleme)</button>
+        <button class="btn btn-sm btn-secondary" onclick="setPresetRestrictions(['settings','console'])">🧪 Standart Tester (Ayarlar & Konsol Kilitli)</button>
+      </div>
+
+      <div class="panel-grid" id="panelGridContainer">
+        <!-- Rendered dynamically -->
+      </div>
+
+      <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px; border-top: 1px solid var(--border); padding-top: 14px;">
+        <button class="btn btn-secondary" onclick="closeRestrictionsModal()">İptal</button>
+        <button class="btn" onclick="saveRestrictions()">💾 Kısıtlamaları Kaydet</button>
+      </div>
+    </div>
+  </div>
+
   <script>
     let adminToken = localStorage.getItem('serpent_admin_token') || '';
+    let currentRestrictUser = '';
+    let usersCache = [];
+
+    const AVAILABLE_PANELS = [
+      { id: 'materials', name: 'Malzeme Editörü', icon: '🧪', desc: 'Malzeme tanımlama kartları, izotop kütüphaneleri ve kompozisyon' },
+      { id: 'assembly', name: 'Yakıt Demeti (Assembly)', icon: '📐', desc: 'Pin matrisleri, yakıt çubukları ve demet geometrisi' },
+      { id: 'geometry', name: 'Kor (Core) Geometrisi', icon: '🌐', desc: 'Reaktör kor haritası, sınır yüzeyleri ve yerleşim' },
+      { id: 'control_rods', name: 'Kontrol Çubukları', icon: '🕹️', desc: 'Kontrol çubuğu grupları, kademeleri ve malzemeleri' },
+      { id: 'detectors', name: 'Detektör Ayarları', icon: '📡', desc: 'Hücre/örgü detektör kartları, enerji grupları ve tepkiler' },
+      { id: 'coefficients', name: 'Kinetik & Katsayılar', icon: '📊', desc: 'Sıcaklık ve reaktivite katsayıları hesaplama seçenekleri' },
+      { id: 'analysis_outputs', name: 'Analiz & Çıktılar', icon: '📈', desc: 'Etkileşimli sonuç grafikleri, PPF ve tükenme analizleri' },
+      { id: 'simulation', name: 'Simülasyon Çalıştırıcı', icon: '🚀', desc: 'Serpent sss2 çalıştırıcı ve simülasyon başlatma butonu' },
+      { id: 'settings', name: 'Genel Ayarlar', icon: '⚙️', desc: 'Kütüphane dizinleri, çekirdek/OMP sayıları ve dosya yolları' },
+      { id: 'plot', name: 'Görselleştirme / Plot', icon: '🗺️', desc: 'Serpent geometri kesit plot alma paneli' },
+      { id: 'console', name: 'Komut Konsolu', icon: '💻', desc: 'Alt komut satırı ve doğrudan terminal paneli' },
+    ];
+    const ALL_PANEL_IDS = AVAILABLE_PANELS.map(p => p.id);
 
     function checkAuth() {
       if (!adminToken) {
@@ -754,33 +977,55 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
       });
     }
 
+    function setRole(roleName) {
+      document.getElementById('newRole').value = roleName;
+    }
+
     function loadUsers() {
       apiCall('/admin/api/users').then(data => {
+        usersCache = data.users || [];
         const tbody = document.getElementById('usersTableBody');
         tbody.innerHTML = '';
-        if (!data.users || data.users.length === 0) {
-          tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;">Kayıtlı kullanıcı yok.</td></tr>';
+        if (!usersCache.length) {
+          tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;">Kayıtlı kullanıcı yok.</td></tr>';
           return;
         }
-        data.users.forEach(u => {
+        usersCache.forEach(u => {
           const isActive = !!u.is_active;
           const tr = document.createElement('tr');
           const lastSeenStr = u.last_seen ? new Date(u.last_seen * 1000).toLocaleString('tr-TR') : 'Hiç giriş yapmadı';
+          const rPanels = Array.isArray(u.restricted_panels) ? u.restricted_panels : [];
+          
+          let restrictionsBadge = '';
+          if (rPanels.length === 0) {
+            restrictionsBadge = '<span class="ok-pill">✅ Tüm Paneller Açık</span>';
+          } else {
+            restrictionsBadge = `<span class="restriction-pill" title="${rPanels.join(', ')}">🛡️ ${rPanels.length} Panel Kısıtlı</span>`;
+          }
+
           tr.innerHTML = `
             <td><strong>${u.username}</strong></td>
             <td>${u.display_name || '-'}</td>
-            <td><span class="badge">${u.role}</span></td>
+            <td>
+              <span class="role-badge" onclick="editUserRole('${u.username}', '${u.role}')" title="Rolü değiştirmek için tıklayın">
+                🏷️ ${u.role} ✏️
+              </span>
+            </td>
             <td>
               <span class="status-dot ${isActive ? 'status-active' : 'status-suspended'}"></span>
               ${isActive ? '<span style="color:var(--success)">Aktif</span>' : '<span style="color:var(--danger)">Askıya Alındı</span>'}
             </td>
+            <td>${restrictionsBadge}</td>
             <td>${lastSeenStr}</td>
-            <td>
-              <button class="btn btn-sm ${isActive ? 'btn-danger' : 'btn'}" onclick="toggleUser('${u.username}', ${!isActive})">
-                ${isActive ? '🛑 Kısıtla / Askıya Al' : '✅ Aktifleştir'}
+            <td style="white-space: nowrap;">
+              <button class="btn btn-sm" style="border: 1px solid var(--accent); background: rgba(56,189,248,0.12); color: var(--accent); margin-right: 4px;" onclick="openRestrictionsModal('${u.username}')">
+                🛡️ Panelleri Kısıtla
               </button>
-              <button class="btn btn-sm btn-warning" onclick="resetPass('${u.username}')">🔑 Şifre Sıfırla</button>
-              ${u.username !== 'admin' ? `<button class="btn btn-sm btn-danger" onclick="deleteUser('${u.username}')">🗑️ Sil</button>` : ''}
+              <button class="btn btn-sm ${isActive ? 'btn-danger' : 'btn'}" style="margin-right: 4px;" onclick="toggleUser('${u.username}', ${!isActive})">
+                ${isActive ? '🛑 Askıya Al' : '✅ Aktifleştir'}
+              </button>
+              <button class="btn btn-sm btn-warning" style="margin-right: 4px;" onclick="resetPass('${u.username}')">🔑 Şifre</button>
+              ${u.username !== 'admin' ? `<button class="btn btn-sm btn-danger" onclick="deleteUser('${u.username}')">🗑️</button>` : ''}
             </td>
           `;
           tbody.appendChild(tr);
@@ -792,7 +1037,7 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
       const username = document.getElementById('newUsername').value.trim();
       const password = document.getElementById('newPassword').value;
       const display_name = document.getElementById('newDisplayName').value.trim();
-      const role = document.getElementById('newRole').value;
+      const role = document.getElementById('newRole').value.trim() || 'tester';
       if (!username || !password) return alert("Kullanıcı adı ve şifre zorunludur!");
 
       apiCall('/admin/api/users/create', 'POST', { username, password, display_name, role }).then(res => {
@@ -801,6 +1046,7 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
           document.getElementById('newUsername').value = '';
           document.getElementById('newPassword').value = '';
           document.getElementById('newDisplayName').value = '';
+          document.getElementById('newRole').value = 'tester';
           loadUsers();
         } else {
           alert("Hata: " + res.message);
@@ -808,8 +1054,89 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
       });
     }
 
+    function editUserRole(username, currentRole) {
+      const newRole = prompt(`'${username}' kullanıcısı için yeni rol / keyword giriniz:`, currentRole);
+      if (newRole && newRole.trim() && newRole.trim() !== currentRole) {
+        apiCall('/admin/api/users/set-role', 'POST', { username, role: newRole.trim() }).then(res => {
+          if (res.status === 'ok') {
+            loadUsers();
+          } else {
+            alert("Rol güncellenemedi: " + (res.message || 'Bilinmeyen hata'));
+          }
+        });
+      }
+    }
+
+    function openRestrictionsModal(username) {
+      currentRestrictUser = username;
+      document.getElementById('modalRestrictUsername').innerText = username;
+      
+      const user = usersCache.find(u => u.username === username);
+      const activeRestricted = (user && Array.isArray(user.restricted_panels)) ? user.restricted_panels : [];
+
+      const grid = document.getElementById('panelGridContainer');
+      grid.innerHTML = '';
+
+      AVAILABLE_PANELS.forEach(p => {
+        const isChecked = activeRestricted.includes(p.id);
+        const card = document.createElement('label');
+        card.className = 'panel-card' + (isChecked ? ' active-restricted' : '');
+        card.innerHTML = `
+          <input type="checkbox" value="${p.id}" ${isChecked ? 'checked' : ''} onchange="onPanelCheckboxChange(this)">
+          <div class="panel-info">
+            <div class="panel-title"><span>${p.icon}</span> <span>${p.name}</span></div>
+            <div class="panel-desc">${p.desc}</div>
+          </div>
+        `;
+        grid.appendChild(card);
+      });
+
+      document.getElementById('restrictionsModal').style.display = 'flex';
+    }
+
+    function onPanelCheckboxChange(cb) {
+      const card = cb.closest('.panel-card');
+      if (cb.checked) {
+        card.classList.add('active-restricted');
+      } else {
+        card.classList.remove('active-restricted');
+      }
+    }
+
+    function setPresetRestrictions(panelIds) {
+      const checkboxes = document.querySelectorAll('#panelGridContainer input[type="checkbox"]');
+      checkboxes.forEach(cb => {
+        cb.checked = panelIds.includes(cb.value);
+        onPanelCheckboxChange(cb);
+      });
+    }
+
+    function saveRestrictions() {
+      if (!currentRestrictUser) return;
+      const checkedBoxes = document.querySelectorAll('#panelGridContainer input[type="checkbox"]:checked');
+      const selectedPanels = Array.from(checkedBoxes).map(cb => cb.value);
+
+      apiCall('/admin/api/users/set-restrictions', 'POST', {
+        username: currentRestrictUser,
+        restricted_panels: selectedPanels
+      }).then(res => {
+        if (res.status === 'ok') {
+          closeRestrictionsModal();
+          loadUsers();
+          alert(`'${currentRestrictUser}' kullanıcısının panel yetkileri güncellendi (${selectedPanels.length} panel kısıtlandı). Masaüstü uygulamasında hemen geçerli olacaktır.`);
+        } else {
+          alert("Kısıtlamalar kaydedilemedi: " + (res.message || 'Bilinmeyen hata'));
+        }
+      });
+    }
+
+    function closeRestrictionsModal() {
+      document.getElementById('restrictionsModal').style.display = 'none';
+      currentRestrictUser = '';
+    }
+
     function toggleUser(username, makeActive) {
-      if (!confirm(`'${username}' kullanıcısının hesabını ${makeActive ? 'AKTİFLEŞTİRMEK' : 'ASKIYA ALMAK (KISITLAMAK)'} istediğinizden emin misiniz?`)) return;
+      if (!confirm(`'${username}' kullanıcısının hesabını ${makeActive ? 'AKTİFLEŞTİRMEK' : 'ASKIYA ALMAK (TAM KISITLAMAK)'} istediğinizden emin misiniz?`)) return;
       apiCall('/admin/api/users/toggle-status', 'POST', { username, is_active: makeActive }).then(res => {
         loadUsers();
       });
