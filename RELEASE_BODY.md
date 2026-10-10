@@ -27,6 +27,14 @@ Yalnız `Serpent.Studio.AppImage` indirmeniz yeterlidir. `Serpent.Studio` aynı 
 
 İndirdiğiniz dosyanın SHA-256 özetini bu sürümün `SHA256SUMS.txt` dosyasındaki aynı adlı kayıtla karşılaştırın. `version_manifest.json` dosyası sürüm, URL, boyut ve doğrulanmış hash içerir.
 
+AppImage boyutu: 138.533.368 bayt. SHA-256:
+
+```text
+ff9a9a64fe1f3112aee0d25fd1767f5f4fd32f7296c7f864115879a10544985b
+```
+
+Doğrulama: masaüstü regresyonları 166/166, gerçek PostgreSQL/HTTP içeren sunucu suite 73/73, baseline Linux ortamında auth/updater/lifecycle 93/93 geçti. Paket içindeki ELF dosyalarının en yüksek GLIBC gereksinimi 2.30; standalone/AppImage GUI smoke ve metadata/zsync/ABI kapıları başarılı.
+
 ## Sunucu dağıtımı hakkında
 
 Varsayılan adres `https://serpent-studio.onrender.com` olarak korunur. Bu masaüstü yayını canlı Render veritabanını taşımış veya yönetici parolasını döndürmüş değildir. Sunucu kaynaklarındaki güvenlik düzeltmeleri ayrı dağıtım gerektirir; uzak parola değiştirme özelliği yeni sunucu endpoint'ine ihtiyaç duyar.
