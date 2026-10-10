@@ -1,15 +1,20 @@
+# Keep the existing public URL and free compute plan.
+# BEFORE applying: back up existing data, configure an external persistent
+# PostgreSQL database, and rotate the exposed admin secret in Render.
+# No disk/database/paid resource is provisioned by this blueprint.
 services:
   - type: web
     name: serpent-studio
-    env: python
-    buildCommand: "pip install --upgrade pip"
-    startCommand: "python server/control_plane.py"
+    runtime: python
     plan: free
-    autoDeploy: true
+    autoDeployTrigger: "off"
+    buildCommand: pip install -r server/requirements.txt
+    startCommand: python server/control_plane.py
+    healthCheckPath: /health
     envVars:
-      - key: PYTHON_VERSION
-        value: 3.11.9
       - key: SERPENT_ADMIN_USER
         value: admin
       - key: SERPENT_ADMIN_PASS
-        value: serpent2026
+        sync: false
+      - key: SERPENT_DATABASE_URL
+        sync: false

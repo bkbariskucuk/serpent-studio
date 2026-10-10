@@ -1,6 +1,6 @@
 ========================================================================
                           SERPENT STUDIO - SÜRÜM NOTLARI
-                                  Sürüm: v1.2.69.48
+                                  Sürüm: v1.2.69.49
 ========================================================================
 
 [SÜRÜM NUMARALANDIRMA VE BAĞIMSIZ SAYAÇ POLİTİKASI (GEÇERLİ 4 KADEMELİ STANDART)]
@@ -24,6 +24,24 @@
 - Bu dönüşüm yalnızca sürüm notu gösterim standardıdır; geçmiş anlık görüntülerin, manifestoların veya çalışma dosyalarının içeriği değiştirilmez.
 - Kullanılmayan bir sayaç değeri atlanmışsa ilgili sürüm başlığında bunun yayımlanmadığı açıkça belirtilir.
 - Bu tarihçede `v0.1.17.15` kaydı yayımlanmamıştır; sonraki kayıt `v0.1.17.16` olarak devam eder.
+
+========================================================================
+[v1.2.69.49] - Güvenli Oturum, İzin Teması ve Doğrulanmış Güncelleme Düzeltmeleri (2026-10-10)
+------------------------------------------------------------------------
+KAPSAM:
+- View Panel Permissions penceresi ve kartları açık/koyu ortak tema paletini izler.
+- Üretim kimlik doğrulamasında geliştirme değişkenleriyle atlama kapatıldı; yerel/uzak oturum kökeni ayrıldı ve hatırlanan uzak oturum çevrimiçi doğrulanır.
+- Sunucu/bağlantı reddinde çalışma kaybetmeyen uygulama-geneli kilit; --no-splash başlangıcında da heartbeat; geometri ve ayrık pencere izinleri düzeltildi.
+- Uzak parola değişimi, güvenli Server ayarı, ağ hatasında tamamlanan GUI worker ve güncel izin önbelleği eklendi.
+- Güncelleme ayrı dosyada indirilir, SHA-256 ile doğrulanır ve atomik değiştirilir; gerçek zaman aşımı ve zorunlu güncelleme kapatma kuralları uygulanır.
+- Yeniden başlatma kaydedilmemiş dosya/çalışan simülasyon kontrollerini atlamaz.
+- Dağıtım adları Serpent.Studio.AppImage ile eşleştirildi; eski zsync uyumluluk dosyası her derlemede yenilenir.
+- GLIBC 2.31 tabanlı yalıtılmış derleme, ELF ABI doğrulaması, hata gizlemeyen smoke testi ve önce taslak/doğrulama sonra yayın akışı hazırlandı.
+- Sunucu kaynaklarında sabit yönetici parolaları ve telemetri/XSS açıkları kaldırıldı. Canlı Render parola rotasyonu ve kalıcı veri yapılandırması ayrıca doğrulanmalıdır; istemci sürümü tek başına bulut verilerini taşımaz.
+
+DOĞRULAMA:
+- Geçici veritabanı/ayarlarla auth, updater, izin ve pencere yaşam döngüsü regresyonları; paket üretiminde sürüm/hash/ABI/smoke yayın kapıları.
+- Render adresi korunur. Ücretli kaynak oluşturulmaz; canlı kalıcılık doğrulanmadan dağıtım güvenli kabul edilmez.
 
 ========================================================================
 [v1.2.69.48] - Alfa Sürecine Resmi Geçiş (Alpha Release), Vektörel SVG Logo Entegrasyonu, "Serpent Studio" Paketlemesi ve Kararlı Demet-Lattice Ayrıştırması (2026-10-10)

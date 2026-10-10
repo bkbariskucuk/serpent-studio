@@ -1,9 +1,8 @@
-__pycache__
-*.pyc
-.git
-.github
-tests/
-packaging/
-build/
-docs/
-*.AppImage
+# Server-only allowlist: never send credentials, databases or user workspaces.
+*
+!Dockerfile
+!.dockerignore
+!server/
+server/*
+!server/*.py
+!server/requirements.txt

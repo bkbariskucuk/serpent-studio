@@ -1,6 +1,6 @@
 """Serpent Studio Control Plane & Administration Server.
 
-Zero-dependency standard-library backend providing:
+Standard-library HTTP backend (optional PostgreSQL storage) providing:
 - Authentication & Session Token Management
 - Remote User Provisioning & Account Suspension (Kill-Switch)
 - Tester Error & Crash Report Ingestion
@@ -26,14 +26,41 @@ import time
 import urllib.parse
 from typing import Any, Dict, List, Optional, Tuple
 
+if __package__:
+    from .storage import Backend, validate_database_url
+else:
+    from storage import Backend, validate_database_url
+
 logger = logging.getLogger("serpent.control_plane")
 
 DEFAULT_PORT = int(os.environ.get("PORT", os.environ.get("SERPENT_CONTROL_PLANE_PORT", 8080)))
 DEFAULT_HOST = os.environ.get("SERPENT_CONTROL_PLANE_HOST", "0.0.0.0")
 DB_PATH = os.environ.get("SERPENT_CONTROL_PLANE_DB", os.path.join(os.path.dirname(__file__), "control_plane.db"))
 
-_ADMIN_DEFAULT_USER = os.environ.get("SERPENT_ADMIN_USER", "admin")
-_ADMIN_DEFAULT_PASS = os.environ.get("SERPENT_ADMIN_PASS", "serpent2026")
+MIN_PASSWORD_LENGTH = 12
+SESSION_MAX_AGE = 30 * 86400
+MAX_REQUEST_BODY = 2 * 1024 * 1024
+REQUEST_TIMEOUT_SECONDS = 15
+MAX_CONCURRENT_REQUESTS = 32
+
+
+def validate_storage_configuration(db_path: str, database_url: str = '') -> None:
+    """On Render, refuse SQLite on the ephemeral application filesystem."""
+    if database_url:
+        validate_database_url(database_url)
+        return
+    if os.environ.get("RENDER", "").lower() not in ("1", "true"):
+        return
+    data_dir = os.environ.get("SERPENT_CONTROL_PLANE_DATA_DIR", "")
+    configured_db = os.environ.get("SERPENT_CONTROL_PLANE_DB", "")
+    if not data_dir or not configured_db or not os.path.isabs(data_dir) or not os.path.isabs(configured_db):
+        raise RuntimeError("Render requires SERPENT_DATABASE_URL for persistent PostgreSQL, or a configured persistent SQLite disk.")
+    real_dir, real_db = os.path.realpath(data_dir), os.path.realpath(db_path)
+    if (real_db != os.path.realpath(configured_db)
+            or os.path.commonpath((real_dir, real_db)) != real_dir
+            or real_db == real_dir or not os.path.ismount(real_dir)
+            or not os.access(real_dir, os.W_OK)):
+        raise RuntimeError("The control-plane database must be inside the writable persistent disk mount.")
 
 
 def hash_password(password: str, salt: Optional[str] = None) -> Tuple[str, str]:
@@ -44,54 +71,66 @@ def hash_password(password: str, salt: Optional[str] = None) -> Tuple[str, str]:
 
 
 def verify_password(password: str, expected_hash: str, salt: str) -> bool:
-    computed, _ = hash_password(password, salt)
-    return hmac.compare_digest(computed, expected_hash)
+    try:
+        computed, _ = hash_password(password, salt)
+        return hmac.compare_digest(computed, expected_hash)
+    except (ValueError, TypeError):
+        return False
 
 
 class Database:
-    def __init__(self, db_path: str = DB_PATH) -> None:
+    def __init__(self, db_path: str = DB_PATH, *, admin_username: Optional[str] = None, admin_password: Optional[str] = None,
+                 database_url: str = '', bootstrap_admin: bool = True) -> None:
         self.db_path = db_path
+        self._backend = Backend(db_path, database_url)
         self._lock = threading.Lock()
-        self._init_schema()
+        self._admin_username = (admin_username or os.environ.get("SERPENT_ADMIN_USER", "admin")).strip().lower()
+        self._admin_password = admin_password if admin_password is not None else os.environ.get("SERPENT_ADMIN_PASS")
+        self._init_schema(bootstrap_admin=bootstrap_admin)
+        self._admin_password = None
 
-    def _get_conn(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(self.db_path, timeout=10.0, check_same_thread=False)
-        conn.row_factory = sqlite3.Row
-        return conn
+    def _get_conn(self):
+        return self._backend.connection()
 
-    def _init_schema(self) -> None:
-        os.makedirs(os.path.dirname(os.path.abspath(self.db_path)), exist_ok=True)
+    def _init_schema(self, *, bootstrap_admin: bool = True) -> None:
+        if not self._backend.postgres:
+            os.makedirs(os.path.dirname(os.path.abspath(self.db_path)), exist_ok=True)
+        identity = 'BIGSERIAL PRIMARY KEY' if self._backend.postgres else 'INTEGER PRIMARY KEY AUTOINCREMENT'
+        timestamp_type = 'DOUBLE PRECISION' if self._backend.postgres else 'REAL'
         with self._lock, self._get_conn() as conn:
+            if self._backend.postgres:
+                # Serializes migrations/bootstrap across overlapping web instances.
+                conn.execute('SELECT pg_advisory_xact_lock(73657270656)')
             cursor = conn.cursor()
-            cursor.execute("""
+            cursor.execute(f"""
                 CREATE TABLE IF NOT EXISTS users (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    id {identity},
                     username TEXT UNIQUE NOT NULL,
                     password_hash TEXT NOT NULL,
                     salt TEXT NOT NULL,
                     role TEXT NOT NULL DEFAULT 'tester',
                     display_name TEXT NOT NULL,
                     is_active INTEGER NOT NULL DEFAULT 1,
-                    created_at REAL NOT NULL,
-                    expires_at REAL
+                    created_at {timestamp_type} NOT NULL,
+                    expires_at {timestamp_type}
                 )
             """)
-            cursor.execute("""
+            cursor.execute(f"""
                 CREATE TABLE IF NOT EXISTS sessions (
                     token TEXT PRIMARY KEY,
-                    user_id INTEGER NOT NULL,
+                    user_id BIGINT NOT NULL,
                     username TEXT NOT NULL,
                     client_version TEXT,
                     platform TEXT,
-                    created_at REAL NOT NULL,
-                    last_heartbeat REAL NOT NULL,
+                    created_at {timestamp_type} NOT NULL,
+                    last_heartbeat {timestamp_type} NOT NULL,
                     is_revoked INTEGER NOT NULL DEFAULT 0,
                     FOREIGN KEY (user_id) REFERENCES users(id)
                 )
             """)
-            cursor.execute("""
+            cursor.execute(f"""
                 CREATE TABLE IF NOT EXISTS error_reports (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    id {identity},
                     username TEXT NOT NULL,
                     app_version TEXT,
                     platform TEXT,
@@ -100,36 +139,56 @@ class Database:
                     traceback TEXT,
                     active_tab TEXT,
                     recent_logs TEXT,
-                    timestamp REAL NOT NULL
+                    timestamp {timestamp_type} NOT NULL
                 )
             """)
-            cursor.execute("""
+            cursor.execute(f"""
                 CREATE TABLE IF NOT EXISTS scripts (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    id {identity},
                     username TEXT NOT NULL,
                     project_name TEXT,
                     script_content TEXT,
-                    timestamp REAL NOT NULL
+                    timestamp {timestamp_type} NOT NULL
                 )
             """)
-            conn.commit()
-
-            # Ensure default superadmin exists
-            cursor.execute("SELECT id FROM users WHERE username = ?", (_ADMIN_DEFAULT_USER,))
-            if not cursor.fetchone():
-                h, s = hash_password(_ADMIN_DEFAULT_PASS)
-                cursor.execute("""
-                    INSERT INTO users (username, password_hash, salt, role, display_name, is_active, created_at)
-                    VALUES (?, ?, ?, 'administrator', 'System Administrator', 1, ?)
-                """, (_ADMIN_DEFAULT_USER, h, s, time.time()))
-                conn.commit()
-
+            cursor.execute("CREATE TABLE IF NOT EXISTS admin_bootstrap (username TEXT PRIMARY KEY, password_hash TEXT NOT NULL, salt TEXT NOT NULL)")
             # Ensure restricted_panels column exists
-            cursor.execute("PRAGMA table_info(users)")
+            if self._backend.postgres:
+                cursor.execute("SELECT column_name AS name FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='users'")
+            else:
+                cursor.execute("PRAGMA table_info(users)")
             cols = [r["name"] for r in cursor.fetchall()]
             if "restricted_panels" not in cols:
                 cursor.execute("ALTER TABLE users ADD COLUMN restricted_panels TEXT DEFAULT '[]'")
-                conn.commit()
+            if bootstrap_admin:
+                self._bootstrap_admin(cursor)
+            conn.commit()
+
+    def _bootstrap_admin(self, cursor) -> None:
+        cursor.execute("SELECT id FROM users WHERE username = ?", (self._admin_username,))
+        admin = cursor.fetchone()
+        bootstrap_pass = self._admin_password
+        if not admin and not bootstrap_pass:
+            raise ValueError("Set SERPENT_ADMIN_PASS to bootstrap the administrator account; no default password is provided.")
+        if bootstrap_pass and len(bootstrap_pass) < MIN_PASSWORD_LENGTH:
+            raise ValueError("SERPENT_ADMIN_PASS must contain at least 12 characters.")
+        if not admin:
+            h, s = hash_password(bootstrap_pass)
+            cursor.execute("""INSERT INTO users (username, password_hash, salt, role, display_name, is_active, created_at)
+                              VALUES (?, ?, ?, 'administrator', 'System Administrator', 1, ?)""",
+                           (self._admin_username, h, s, time.time()))
+        if bootstrap_pass:
+            cursor.execute("SELECT password_hash, salt FROM admin_bootstrap WHERE username = ?", (self._admin_username,))
+            previous = cursor.fetchone()
+            # A new env secret rotates credentials; an unchanged env must not undo
+            # a self-service password change when the web service restarts.
+            if not previous or not verify_password(bootstrap_pass, previous['password_hash'], previous['salt']):
+                h, s = hash_password(bootstrap_pass)
+                cursor.execute("UPDATE users SET password_hash = ?, salt = ? WHERE username = ?", (h, s, self._admin_username))
+                cursor.execute("UPDATE sessions SET is_revoked = 1 WHERE username = ?", (self._admin_username,))
+                cursor.execute("""INSERT INTO admin_bootstrap (username,password_hash,salt) VALUES (?, ?, ?)
+                                  ON CONFLICT(username) DO UPDATE SET password_hash=excluded.password_hash, salt=excluded.salt""",
+                               (self._admin_username, h, s))
 
     def get_user(self, username: str) -> Optional[Dict[str, Any]]:
         with self._lock, self._get_conn() as conn:
@@ -153,8 +212,8 @@ class Database:
         u = username.strip().lower()
         if not u or len(u) < 3:
             return False, "Username must be at least 3 characters."
-        if not password or len(password) < 4:
-            return False, "Password must be at least 4 characters."
+        if not password or len(password) < MIN_PASSWORD_LENGTH:
+            return False, "Password must be at least 12 characters."
 
         h, s = hash_password(password)
         panels_json = json.dumps(restricted_panels or [])
@@ -167,7 +226,8 @@ class Database:
                 """, (u, h, s, role.strip(), display_name or u, time.time(), expires_at, panels_json))
                 conn.commit()
                 return True, "User created successfully."
-            except sqlite3.IntegrityError:
+            except self._backend.integrity_error:
+                conn.rollback()
                 return False, f"User '{u}' already exists."
 
     def set_user_restrictions(self, username: str, restricted_panels: List[str]) -> bool:
@@ -189,21 +249,26 @@ class Database:
         with self._lock, self._get_conn() as conn:
             cur = conn.cursor()
             cur.execute("UPDATE users SET is_active = ? WHERE username = ?", (1 if is_active else 0, username.strip().lower()))
+            changed = cur.rowcount > 0
             if not is_active:
                 cur.execute("UPDATE sessions SET is_revoked = 1 WHERE username = ?", (username.strip().lower(),))
             conn.commit()
-            return cur.rowcount > 0
+            return changed
 
     def reset_password(self, username: str, new_password: str) -> bool:
+        if len(new_password) < MIN_PASSWORD_LENGTH:
+            return False
         h, s = hash_password(new_password)
         with self._lock, self._get_conn() as conn:
             cur = conn.cursor()
             cur.execute("UPDATE users SET password_hash = ?, salt = ? WHERE username = ?", (h, s, username.strip().lower()))
+            changed = cur.rowcount > 0
+            cur.execute("UPDATE sessions SET is_revoked = 1 WHERE username = ?", (username.strip().lower(),))
             conn.commit()
-            return cur.rowcount > 0
+            return changed
 
     def delete_user(self, username: str) -> bool:
-        if username.strip().lower() == _ADMIN_DEFAULT_USER.lower():
+        if username.strip().lower() == self._admin_username:
             return False
         with self._lock, self._get_conn() as conn:
             cur = conn.cursor()
@@ -245,6 +310,35 @@ class Database:
             conn.commit()
         return token
 
+    def revoke_session(self, token: str) -> None:
+        with self._lock, self._get_conn() as conn:
+            conn.execute("UPDATE sessions SET is_revoked = 1 WHERE token = ?", (token,))
+            conn.commit()
+
+    def change_user_password(self, token: str, current_password: str, new_password: str) -> Tuple[bool, str]:
+        """Atomically change the authenticated user's password and rotate all sessions."""
+        if len(new_password) < MIN_PASSWORD_LENGTH:
+            return False, "New password must be at least 12 characters."
+        with self._lock, self._get_conn() as conn:
+            if not self._backend.postgres:
+                conn.execute("BEGIN IMMEDIATE")
+            sql = "SELECT u.*, s.created_at AS session_created FROM users u JOIN sessions s ON s.user_id=u.id WHERE s.token=? AND s.is_revoked=0"
+            if self._backend.postgres:
+                sql += " FOR UPDATE OF u, s"
+            row = conn.execute(sql, (token,)).fetchone()
+            if (not row or not row["is_active"] or (row["expires_at"] and row["expires_at"] < time.time())
+                    or time.time() - row["session_created"] > SESSION_MAX_AGE
+                    or not verify_password(current_password, row["password_hash"], row["salt"])):
+                return False, "Current password verification failed."
+            hashed, salt = hash_password(new_password)
+            conn.execute("UPDATE users SET password_hash=?, salt=? WHERE id=?", (hashed, salt, row["id"]))
+            conn.execute("UPDATE sessions SET is_revoked=1 WHERE user_id=?", (row["id"],))
+            replacement = secrets.token_hex(24)
+            now = time.time()
+            conn.execute("INSERT INTO sessions (token,user_id,username,created_at,last_heartbeat,is_revoked) VALUES (?,?,?,?,?,0)", (replacement, row["id"], row["username"], now, now))
+            conn.commit()
+            return True, replacement
+
     def verify_and_touch_session(self, token: str) -> Tuple[bool, Optional[Dict[str, Any]]]:
         if not token:
             return False, None
@@ -261,6 +355,10 @@ class Database:
                 return False, None
 
             data = dict(row)
+            if time.time() - data["created_at"] > SESSION_MAX_AGE:
+                cur.execute("UPDATE sessions SET is_revoked = 1 WHERE token = ?", (token,))
+                conn.commit()
+                return False, None
             if not data.get("is_active"):
                 cur.execute("UPDATE sessions SET is_revoked = 1 WHERE token = ?", (token,))
                 conn.commit()
@@ -283,13 +381,17 @@ class Database:
     ) -> int:
         with self._lock, self._get_conn() as conn:
             cur = conn.cursor()
-            cur.execute("""
+            sql = """
                 INSERT INTO error_reports
                 (username, app_version, platform, exception_type, exception_message, traceback, active_tab, recent_logs, timestamp)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (username, app_version, platform, exception_type, exception_message, traceback_str, active_tab, recent_logs, time.time()))
+            """
+            if self._backend.postgres:
+                sql += " RETURNING id"
+            cur.execute(sql, (username, app_version, platform, exception_type, exception_message, traceback_str, active_tab, recent_logs, time.time()))
+            row_id = cur.fetchone()['id'] if self._backend.postgres else cur.lastrowid
             conn.commit()
-            return cur.lastrowid
+            return row_id
 
     def list_errors(self, limit: int = 100) -> List[Dict[str, Any]]:
         with self._lock, self._get_conn() as conn:
@@ -300,12 +402,16 @@ class Database:
     def record_script(self, username: str, project_name: str, script_content: str) -> int:
         with self._lock, self._get_conn() as conn:
             cur = conn.cursor()
-            cur.execute("""
+            sql = """
                 INSERT INTO scripts (username, project_name, script_content, timestamp)
                 VALUES (?, ?, ?, ?)
-            """, (username, project_name, script_content, time.time()))
+            """
+            if self._backend.postgres:
+                sql += " RETURNING id"
+            cur.execute(sql, (username, project_name, script_content, time.time()))
+            row_id = cur.fetchone()['id'] if self._backend.postgres else cur.lastrowid
             conn.commit()
-            return cur.lastrowid
+            return row_id
 
     def list_scripts(self, limit: int = 50) -> List[Dict[str, Any]]:
         with self._lock, self._get_conn() as conn:
@@ -321,17 +427,64 @@ class Database:
             return row["script_content"] if row else None
 
 
+class RequestError(ValueError):
+    def __init__(self, status: int, message: str):
+        super().__init__(message)
+        self.status = status
+
+
+class BoundedHTTPServer(http.server.ThreadingHTTPServer):
+    """Bound request threads and reject overload without queuing unbounded work."""
+
+    daemon_threads = True
+
+    def __init__(self, *args, max_workers: int = MAX_CONCURRENT_REQUESTS, **kwargs):
+        if max_workers < 1:
+            raise ValueError('max_workers must be positive.')
+        self._request_slots = threading.BoundedSemaphore(max_workers)
+        super().__init__(*args, **kwargs)
+
+    def process_request(self, request, client_address):
+        if not self._request_slots.acquire(blocking=False):
+            try:
+                request.settimeout(1.0)
+                request.sendall(b'HTTP/1.0 503 Service Unavailable\r\nConnection: close\r\nContent-Length: 0\r\nRetry-After: 1\r\n\r\n')
+            except OSError:
+                pass
+            finally:
+                self.shutdown_request(request)
+            return
+        try:
+            super().process_request(request, client_address)
+        except BaseException:
+            self._request_slots.release()
+            raise
+
+    def process_request_thread(self, request, client_address):
+        try:
+            super().process_request_thread(request, client_address)
+        finally:
+            self._request_slots.release()
+
+
 class ControlPlaneHandler(http.server.BaseHTTPRequestHandler):
     db: Database
 
+    def setup(self) -> None:
+        super().setup()
+        self.connection.settimeout(REQUEST_TIMEOUT_SECONDS)
+
     def log_message(self, format: str, *args: Any) -> None:
-        logger.debug("%s - - [%s] %s", self.address_string(), self.log_date_time_string(), format % args)
+        # Request targets, driver exception strings, and bodies can contain secrets.
+        logger.debug("Control-plane HTTP request handled")
 
     def _send_json(self, status_code: int, data: Dict[str, Any]) -> None:
         payload = json.dumps(data, ensure_ascii=False).encode("utf-8")
         self.send_response(status_code)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(payload)))
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS, DELETE")
@@ -343,18 +496,44 @@ class ControlPlaneHandler(http.server.BaseHTTPRequestHandler):
         self.send_response(status_code)
         self.send_header("Content-Type", "text/html; charset=utf-8")
         self.send_header("Content-Length", str(len(payload)))
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("X-Frame-Options", "DENY")
         self.end_headers()
         self.wfile.write(payload)
 
     def _read_json_body(self) -> Dict[str, Any]:
         try:
             length = int(self.headers.get("Content-Length", 0))
-            if length <= 0:
-                return {}
-            raw = self.rfile.read(length).decode("utf-8")
-            return json.loads(raw)
-        except Exception:
+        except (TypeError, ValueError):
+            raise RequestError(400, 'Invalid Content-Length.') from None
+        if length < 0:
+            raise RequestError(400, 'Invalid Content-Length.')
+        if length > MAX_REQUEST_BODY:
+            self.close_connection = True
+            raise RequestError(413, 'Request body exceeds the 2 MiB limit.')
+        if length == 0:
             return {}
+        try:
+            raw = self.rfile.read(length).decode("utf-8")
+            body = json.loads(raw)
+        except (UnicodeError, ValueError):
+            raise RequestError(400, 'Request body must be a JSON object.') from None
+        if not isinstance(body, dict):
+            raise RequestError(400, 'Request body must be a JSON object.')
+        return body
+
+    def _handle_request(self, handler) -> None:
+        try:
+            handler()
+        except RequestError as exc:
+            self._send_json(exc.status, {'status':'error', 'message':str(exc)})
+        except TimeoutError:
+            self.close_connection = True
+            self._send_json(408, {'status':'error', 'message':'Request timed out.'})
+        except Exception as exc:
+            logger.error('Control-plane request failed (%s)', type(exc).__name__)
+            self._send_json(503, {'status':'error', 'message':'Service temporarily unavailable. Please retry.'})
 
     def _get_bearer_token(self) -> str:
         auth_header = self.headers.get("Authorization", "")
@@ -370,6 +549,9 @@ class ControlPlaneHandler(http.server.BaseHTTPRequestHandler):
         self.end_headers()
 
     def do_GET(self) -> None:
+        self._handle_request(self._do_GET)
+
+    def _do_GET(self) -> None:
         parsed = urllib.parse.urlparse(self.path)
         path = parsed.path.rstrip("/")
 
@@ -420,6 +602,9 @@ class ControlPlaneHandler(http.server.BaseHTTPRequestHandler):
         self._send_json(404, {"status": "error", "message": "Endpoint not found."})
 
     def do_POST(self) -> None:
+        self._handle_request(self._do_POST)
+
+    def _do_POST(self) -> None:
         parsed = urllib.parse.urlparse(self.path)
         path = parsed.path.rstrip("/")
         body = self._read_json_body()
@@ -492,11 +677,29 @@ class ControlPlaneHandler(http.server.BaseHTTPRequestHandler):
             })
             return
 
+        if path == "/v1/auth/change-password":
+            token = self._get_bearer_token()
+            valid, _ = self.db.verify_and_touch_session(token)
+            if not valid:
+                self._send_json(401, {"status": "error", "message": "Sign in again to change your password."})
+                return
+            ok, result = self.db.change_user_password(token, str(body.get("current_password", "")), str(body.get("new_password", "")))
+            self._send_json(200 if ok else 403, {"status": "ok", "token": result} if ok else {"status": "error", "message": result})
+            return
+
+        if path in ("/v1/auth/logout", "/admin/api/logout"):
+            self.db.revoke_session(self._get_bearer_token())
+            self._send_json(200, {"status": "ok"})
+            return
+
         # Client Error & Crash Report Endpoint
         if path == "/v1/telemetry/errors":
             token = self._get_bearer_token() or str(body.get("token", ""))
             valid, session_data = self.db.verify_and_touch_session(token)
-            username = session_data["username"] if (valid and session_data) else str(body.get("username", "anonymous"))
+            if not valid or not session_data:
+                self._send_json(401, {"status": "error", "message": "A valid session is required for telemetry."})
+                return
+            username = session_data["username"]
 
             rep_id = self.db.record_error(
                 username=username,
@@ -515,7 +718,10 @@ class ControlPlaneHandler(http.server.BaseHTTPRequestHandler):
         if path == "/v1/telemetry/scripts":
             token = self._get_bearer_token() or str(body.get("token", ""))
             valid, session_data = self.db.verify_and_touch_session(token)
-            username = session_data["username"] if (valid and session_data) else str(body.get("username", "anonymous"))
+            if not valid or not session_data:
+                self._send_json(401, {"status": "error", "message": "A valid session is required for telemetry."})
+                return
+            username = session_data["username"]
 
             s_id = self.db.record_script(
                 username=username,
@@ -533,7 +739,9 @@ class ControlPlaneHandler(http.server.BaseHTTPRequestHandler):
             u = str(body.get("username", "")).strip().lower()
             p = str(body.get("password", ""))
             user = self.db.get_user(u)
-            if user and user["role"] == "administrator" and verify_password(p, user["password_hash"], user["salt"]):
+            if (user and user["role"] == "administrator" and user["is_active"]
+                    and (not user["expires_at"] or user["expires_at"] > time.time())
+                    and verify_password(p, user["password_hash"], user["salt"])):
                 adm_token = self.db.create_session(user["id"], user["username"], "web-admin", "browser")
                 self._send_json(200, {"status": "ok", "token": adm_token, "username": user["username"]})
             else:
@@ -899,7 +1107,9 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
   </div>
 
   <script>
-    let adminToken = localStorage.getItem('serpent_admin_token') || '';
+    // Never persist bearer credentials in browser storage.
+    localStorage.removeItem('serpent_admin_token');
+    let adminToken = '';
     let currentRestrictUser = '';
     let usersCache = [];
 
@@ -919,36 +1129,40 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
     const ALL_PANEL_IDS = AVAILABLE_PANELS.map(p => p.id);
 
     function checkAuth() {
-      if (!adminToken) {
-        const u = prompt("Yönetici Kullanıcı Adı:", "admin");
-        const p = prompt("Yönetici Şifresi:", "serpent2026");
-        if (u && p) {
-          fetch('/admin/api/login', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({username: u, password: p})
-          }).then(r => r.json()).then(data => {
-            if (data.status === 'ok') {
-              adminToken = data.token;
-              localStorage.setItem('serpent_admin_token', adminToken);
-              document.getElementById('adminName').innerText = '👤 ' + data.username;
-              loadAll();
-            } else {
-              alert("Giriş başarısız: " + data.message);
-              checkAuth();
-            }
-          }).catch(() => alert("Sunucuya bağlanılamadı."));
-        }
-      } else {
-        document.getElementById('adminName').innerText = '👤 Yönetici';
-        loadAll();
-      }
+      if (adminToken) { loadAll(); return; }
+      if (document.getElementById('adminLoginDialog')) return;
+      const dialog = document.createElement('dialog');
+      dialog.id = 'adminLoginDialog';
+      dialog.style.cssText = 'margin:auto;padding:24px;background:var(--card-bg);color:var(--text);border:1px solid var(--border);border-radius:12px';
+      dialog.addEventListener('cancel', event => event.preventDefault());
+      const form = document.createElement('form');
+      const title = document.createElement('h2'); title.textContent = 'Yönetici Girişi';
+      const username = document.createElement('input');
+      username.placeholder = 'Kullanıcı adı'; username.autocomplete = 'username'; username.required = true;
+      const password = document.createElement('input');
+      password.type = 'password'; password.placeholder = 'Şifre'; password.autocomplete = 'current-password'; password.required = true;
+      const error = document.createElement('p'); error.setAttribute('role', 'alert');
+      const submit = document.createElement('button'); submit.type = 'submit'; submit.className = 'btn'; submit.textContent = 'Giriş Yap';
+      form.append(title, username, password, error, submit);
+      form.addEventListener('submit', event => {
+        event.preventDefault(); submit.disabled = true; error.textContent = '';
+        fetch('/admin/api/login', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({username:username.value, password:password.value})})
+        .then(response => response.json().then(data => {
+          if (!response.ok || data.status !== 'ok' || !data.token) throw new Error(data.message || 'Giriş başarısız.');
+          adminToken = data.token; password.value = '';
+          document.getElementById('adminName').textContent = '👤 ' + data.username;
+          dialog.close(); dialog.remove(); loadAll();
+        }))
+        .catch(err => { error.textContent = err.message || 'Sunucuya bağlanılamadı.'; })
+        .finally(() => { submit.disabled = false; });
+      });
+      dialog.append(form); document.body.append(dialog); dialog.showModal(); username.focus();
     }
 
     function logoutAdmin() {
-      localStorage.removeItem('serpent_admin_token');
+      const token = adminToken;
       adminToken = '';
-      location.reload();
+      fetch('/admin/api/logout', {method:'POST', headers:{Authorization:'Bearer ' + token}}).finally(() => location.reload());
     }
 
     function switchTab(name) {
@@ -981,6 +1195,21 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
       document.getElementById('newRole').value = roleName;
     }
 
+    function textCell(row, value) {
+      const cell = document.createElement('td');
+      cell.textContent = value == null ? '-' : String(value);
+      row.appendChild(cell);
+      return cell;
+    }
+
+    function actionButton(parent, label, callback, extraClass='') {
+      const button = document.createElement('button');
+      button.type = 'button'; button.className = 'btn btn-sm ' + extraClass;
+      button.textContent = label; button.addEventListener('click', callback);
+      parent.appendChild(button);
+      return button;
+    }
+
     function loadUsers() {
       apiCall('/admin/api/users').then(data => {
         usersCache = data.users || [];
@@ -996,38 +1225,20 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
           const lastSeenStr = u.last_seen ? new Date(u.last_seen * 1000).toLocaleString('tr-TR') : 'Hiç giriş yapmadı';
           const rPanels = Array.isArray(u.restricted_panels) ? u.restricted_panels : [];
           
-          let restrictionsBadge = '';
-          if (rPanels.length === 0) {
-            restrictionsBadge = '<span class="ok-pill">✅ Tüm Paneller Açık</span>';
-          } else {
-            restrictionsBadge = `<span class="restriction-pill" title="${rPanels.join(', ')}">🛡️ ${rPanels.length} Panel Kısıtlı</span>`;
-          }
-
-          tr.innerHTML = `
-            <td><strong>${u.username}</strong></td>
-            <td>${u.display_name || '-'}</td>
-            <td>
-              <span class="role-badge" onclick="editUserRole('${u.username}', '${u.role}')" title="Rolü değiştirmek için tıklayın">
-                🏷️ ${u.role} ✏️
-              </span>
-            </td>
-            <td>
-              <span class="status-dot ${isActive ? 'status-active' : 'status-suspended'}"></span>
-              ${isActive ? '<span style="color:var(--success)">Aktif</span>' : '<span style="color:var(--danger)">Askıya Alındı</span>'}
-            </td>
-            <td>${restrictionsBadge}</td>
-            <td>${lastSeenStr}</td>
-            <td style="white-space: nowrap;">
-              <button class="btn btn-sm" style="border: 1px solid var(--accent); background: rgba(56,189,248,0.12); color: var(--accent); margin-right: 4px;" onclick="openRestrictionsModal('${u.username}')">
-                🛡️ Panelleri Kısıtla
-              </button>
-              <button class="btn btn-sm ${isActive ? 'btn-danger' : 'btn'}" style="margin-right: 4px;" onclick="toggleUser('${u.username}', ${!isActive})">
-                ${isActive ? '🛑 Askıya Al' : '✅ Aktifleştir'}
-              </button>
-              <button class="btn btn-sm btn-warning" style="margin-right: 4px;" onclick="resetPass('${u.username}')">🔑 Şifre</button>
-              ${u.username !== 'admin' ? `<button class="btn btn-sm btn-danger" onclick="deleteUser('${u.username}')">🗑️</button>` : ''}
-            </td>
-          `;
+          textCell(tr, u.username);
+          textCell(tr, u.display_name || '-');
+          const roleCell = textCell(tr, '');
+          actionButton(roleCell, '🏷️ ' + u.role + ' ✏️', () => editUserRole(u.username, u.role));
+          const state = textCell(tr, isActive ? 'Aktif' : 'Askıya Alındı');
+          state.style.color = isActive ? 'var(--success)' : 'var(--danger)';
+          const permissions = textCell(tr, rPanels.length ? rPanels.length + ' Panel Kısıtlı' : 'Tüm Paneller Açık');
+          permissions.title = rPanels.join(', ');
+          textCell(tr, lastSeenStr);
+          const actions = textCell(tr, ''); actions.style.whiteSpace = 'nowrap';
+          actionButton(actions, '🛡️ Panelleri Kısıtla', () => openRestrictionsModal(u.username));
+          actionButton(actions, isActive ? '🛑 Askıya Al' : '✅ Aktifleştir', () => toggleUser(u.username, !isActive));
+          actionButton(actions, '🔑 Şifre', () => resetPass(u.username), 'btn-warning');
+          actionButton(actions, '🗑️', () => deleteUser(u.username), 'btn-danger');
           tbody.appendChild(tr);
         });
       });
@@ -1146,7 +1357,7 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
       const newP = prompt(`'${username}' kullanıcısı için yeni şifreyi giriniz:`);
       if (!newP) return;
       apiCall('/admin/api/users/reset-password', 'POST', { username, password: newP }).then(res => {
-        alert("Şifre güncellendi.");
+        alert(res.status === 'ok' ? "Şifre güncellendi." : "Şifre güncellenemedi. En az 12 karakter kullanın.");
       });
     }
 
@@ -1168,15 +1379,13 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
         data.errors.forEach(e => {
           const tr = document.createElement('tr');
           const timeStr = new Date(e.timestamp * 1000).toLocaleString('tr-TR');
-          tr.innerHTML = `
-            <td>${timeStr}</td>
-            <td><strong>${e.username}</strong></td>
-            <td style="color:var(--danger)"><strong>${e.exception_type}</strong></td>
-            <td>${e.exception_message.substring(0, 50)}...</td>
-            <td>${e.active_tab || '-'}</td>
-            <td>${e.app_version || '-'}</td>
-            <td><button class="btn btn-sm" onclick='showTraceback(${JSON.stringify(e)})'>🔍 Detay</button></td>
-          `;
+          textCell(tr, timeStr);
+          textCell(tr, e.username);
+          textCell(tr, e.exception_type).style.color = 'var(--danger)';
+          textCell(tr, String(e.exception_message || '').substring(0, 50) + '...');
+          textCell(tr, e.active_tab || '-');
+          textCell(tr, e.app_version || '-');
+          actionButton(textCell(tr, ''), '🔍 Detay', () => showTraceback(e));
           tbody.appendChild(tr);
         });
       });
@@ -1199,13 +1408,11 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
         data.scripts.forEach(s => {
           const tr = document.createElement('tr');
           const timeStr = new Date(s.timestamp * 1000).toLocaleString('tr-TR');
-          tr.innerHTML = `
-            <td>${timeStr}</td>
-            <td><strong>${s.username}</strong></td>
-            <td>${s.project_name || '-'}</td>
-            <td>${(s.size / 1024).toFixed(1)} KB</td>
-            <td><button class="btn btn-sm" onclick="viewScript(${s.id})">📄 Betiği Gör</button></td>
-          `;
+          textCell(tr, timeStr);
+          textCell(tr, s.username);
+          textCell(tr, s.project_name || '-');
+          textCell(tr, (s.size / 1024).toFixed(1) + ' KB');
+          actionButton(textCell(tr, ''), '📄 Betiği Gör', () => viewScript(s.id));
           tbody.appendChild(tr);
         });
       });
@@ -1235,9 +1442,13 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
 
 
 def run_server(host: str = DEFAULT_HOST, port: int = DEFAULT_PORT, db_path: str = DB_PATH) -> http.server.HTTPServer:
-    db = Database(db_path)
-    ControlPlaneHandler.db = db
-    server = http.server.ThreadingHTTPServer((host, port), ControlPlaneHandler)
+    database_url = os.environ.get('SERPENT_DATABASE_URL', '').strip()
+    validate_storage_configuration(db_path, database_url)
+    db = Database(db_path, database_url=database_url)
+    # Every listening server owns its authority. Starting another instance must
+    # never replace the database used by an already-running server's handlers.
+    handler = type('BoundControlPlaneHandler', (ControlPlaneHandler,), {'db':db})
+    server = BoundedHTTPServer((host, port), handler)
     logger.info("Serpent Studio Control Plane running on http://%s:%d (Admin UI: /admin)", host, port)
     return server
 
@@ -1260,8 +1471,8 @@ if __name__ == "__main__":
     print(f"==================================================================", flush=True)
     print(f"⚛️  Serpent Studio Control Plane Server Started", flush=True)
     print(f"👉  Admin Web Panel: http://localhost:{port}/admin", flush=True)
-    print(f"👉  Default Admin  : admin / serpent2026", flush=True)
-    print(f"👉  Database File  : {db_file}", flush=True)
+    print("Admin credentials are supplied by environment configuration.", flush=True)
+    print("👉  Storage        : " + ('persistent PostgreSQL' if server.RequestHandlerClass.db._backend.postgres else 'SQLite'), flush=True)
     print(f"==================================================================", flush=True)
     sys.stdout.flush()
     try:
