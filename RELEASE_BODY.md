@@ -8,8 +8,8 @@
 
 > [!IMPORTANT]
 > **Tek İndirmeniz Gereken Dosya / Only File You Need:**  
-> 👉 [**`Serpent Studio.AppImage`**](https://github.com/bkbariskucuk/serpent-studio/releases/download/v1.2.69.48/Serpent%20Studio.AppImage) (~134 MB)  
-> *(Alternatif doğrudan ikili: [`Serpent Studio`](https://github.com/bkbariskucuk/serpent-studio/releases/download/v1.2.69.48/Serpent%20Studio))*
+> 👉 [**`Serpent Studio.AppImage`**](https://github.com/bkbariskucuk/serpent-studio/releases/download/v1.2.69.48/Serpent.Studio.AppImage) (~134 MB)  
+> *(Alternatif doğrudan ikili: [`Serpent Studio`](https://github.com/bkbariskucuk/serpent-studio/releases/download/v1.2.69.48/Serpent.Studio))*
 
 #### 🚀 Nasıl Çalıştırılır? / Quick Start:
 1. **İzin Verin:** Dosyaya sağ tıklayın -> *Özellikler* -> *İzinler* -> *"Dosyayı program gibi çalıştırmaya izin ver"* seçeneğini işaretleyin.  

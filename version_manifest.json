@@ -7,6 +7,6 @@
   "release_notes": "Alfa Sürecine Resmi Geçiş (Alpha Release), Vektörel SVG Logo Entegrasyonu, Serpent Studio Paketlemesi ve Kararlı Demet-Lattice Ayrıştırması",
   "sha256": "619d664953875bcad947616c1c4874cd72fdb4768639325af162c301d7721dc9",
   "file_size_bytes": 140843512,
-  "download_url": "https://github.com/bkbariskucuk/serpent-studio/releases/download/v1.2.69.48/Serpent%20Studio.AppImage",
-  "zsync_url": "https://github.com/bkbariskucuk/serpent-studio/releases/download/v1.2.69.48/Serpent%20Studio.AppImage.zsync"
+  "download_url": "https://github.com/bkbariskucuk/serpent-studio/releases/download/v1.2.69.48/Serpent.Studio.AppImage",
+  "zsync_url": "https://github.com/bkbariskucuk/serpent-studio/releases/download/v1.2.69.48/Serpent.Studio.AppImage.zsync"
 }
