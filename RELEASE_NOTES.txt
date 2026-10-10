@@ -1,11 +1,11 @@
 ========================================================================
                           SERPENT STUDIO - SÜRÜM NOTLARI
-                                  Sürüm: v0.2.68.48
+                                  Sürüm: v1.2.69.48
 ========================================================================
 
 [SÜRÜM NUMARALANDIRMA VE BAĞIMSIZ SAYAÇ POLİTİKASI (GEÇERLİ 4 KADEMELİ STANDART)]
-- vMAJOR.MINOR.PATCH.BUILD (v0.2.W.V) biçiminde 4 kademeli bağımsız sayaç kullanılır:
-  * 1. Kademe (MAJOR = 0): Projenin geliştirme / alfa-beta aşaması.
+- vMAJOR.MINOR.PATCH.BUILD (v1.2.W.V) biçiminde 4 kademeli bağımsız sayaç kullanılır:
+  * 1. Kademe (MAJOR = 1): Projenin resmi Alfa (Alpha) geliştirme ve doğrulama aşaması.
   * 2. Kademe (MINOR = 2): Arayüz ve çekirdek modül mimarisi (v0.2 minör sürüm atlaması).
   * 3. Kademe (PATCH = W): Önemli geliştirmeler ve yeni yetenekler için bağımsız yürüyen sayaç.
   * 4. Kademe (BUILD = V): Hata düzeltmeleri, küçük iyileştirmeler ve stil ince ayarları için bağımsız yürüyen sayaç.
@@ -24,6 +24,41 @@
 - Bu dönüşüm yalnızca sürüm notu gösterim standardıdır; geçmiş anlık görüntülerin, manifestoların veya çalışma dosyalarının içeriği değiştirilmez.
 - Kullanılmayan bir sayaç değeri atlanmışsa ilgili sürüm başlığında bunun yayımlanmadığı açıkça belirtilir.
 - Bu tarihçede `v0.1.17.15` kaydı yayımlanmamıştır; sonraki kayıt `v0.1.17.16` olarak devam eder.
+
+========================================================================
+[v1.2.69.48] - Alfa Sürecine Resmi Geçiş (Alpha Release), Vektörel SVG Logo Entegrasyonu, "Serpent Studio" Paketlemesi ve Kararlı Demet-Lattice Ayrıştırması (2026-10-10)
+------------------------------------------------------------------------
+KAPSAM:
+1. Alfa Sürecine Resmi Geçiş (v1.x.x.x):
+   - Versiyon numaralandırmasında majör kademe 1'e yükseltilerek resmi Alfa (Alpha) geliştirme ve doğrulama sürecine geçildi.
+2. Demet (Lattice) Ayrıştırma Kararlılığı (`core/input_parser.py`, `ui/main_window.py`):
+   - Ayrıştırıcı, demetleri algılarken yalnızca doğrudan `lat` komutuna bakacak şekilde sınırlandırıldı. Üstteki ayraç ve başlık yorumlarının (`%=====`) demet ismi sanılması engellendi.
+3. Vektörel SVG Logo ve Sistem İkonu Entegrasyonu:
+   - Pencere ve sistem ikonu `QSvgRenderer` ile pürüzsüz vektörel SVG (`splash_logo.svg`) formatına bağlandı; AppImage ve sistem hicolor ikon dizinlerine ölçeklenebilir SVG formatında entegre edildi.
+4. "Serpent Studio" Dağıtım Paketi Adlandırması:
+   - Derleme ve dağıtım paketi adı "SerpentStudio-x86_64.AppImage" yerine doğrudan "Serpent Studio" ve "Serpent Studio.AppImage" olarak güncellendi.
+
+========================================================================
+[v0.2.69.48] - Sağ Üst Ribbon Aktif Kullanıcı Profil Bileşeni (UserProfileWidget), Canlı Oturum Rozeti ve Etkileşimli Hesap Yönetimi (2026-10-10)
+------------------------------------------------------------------------
+KAPSAM:
+1. Sağ Üst Aktif Kullanıcı Profil Başlığı (`ui/user_profile.py`, `ui/main_window.py`):
+   - Ana araç çubuğunun en sağında (Global Arama çubuğunun hemen yanında) modern, şık ve etkileşimli `UserProfileWidget` bileşeni yerleştirildi.
+   - Durum Göstergesi (Canlı doğrulanan oturum için 🟢 yeşil, yerel/çevrimdışı için 🟡 sarı/turuncu, askıya alınan için 🔴 kırmızı).
+   - Vektörel SVG Kullanıcı Avatarı (QSvgRenderer tabanlı, tema uyumlu ve platformlar arası sıfır glif hatası).
+   - Kullanıcı / Görüntülenen İsim etiketi ve Admin tarafından belirlenen Rol / Keyword rozeti (`Tester`, `Yönetici`, `Araştırmacı` vb.).
+2. Etkileşimli Profil Kartı ve Açılır Menü:
+   - Bileşene tıklandığında açılan kullanıcı kartında: Tam isim, `@kullanıcı_adı`, aktif rol, oturum doğrulama durumu ve panel kısıtlama özeti gösterilir.
+   - `🔑 Şifre Değiştir...`: Kullanıcının kendi şifresini değiştirebileceği diyalog.
+   - `🛡️ Panel Yetkilerimi Görüntüle...`: Uygulamadaki 11 modülün (Malzemeler, Demet, Kor, Kontrol Çubukları, Detektörler, Katsayılar, Analiz, Simülasyon, Ayarlar, Plot, Konsol) hangilerine erişim izni olduğunu veya kısıtlandığını görselleştiren detaylı izin raporu penceresi.
+   - `🔄 Oturumu & Yetkileri Canlı Yenile`: Render üzerindeki merkezi kontrol düzlemine anlık heartbeat göndererek yönetici panelinden yapılan kısıtlama veya rol değişikliklerini canlı çeken tetikleyici.
+   - `🚪 Oturumu Kapat (Çıkış)`: Güvenli oturum sonlandırma.
+3. Çift Yönlü Tema ve SessionGuard Entegrasyonu (`main.py`, `ui/theme.py`):
+   - Koyu ve Açık tema değişimlerinde anlık dinamik renk/kenarlık geçişi.
+   - Arka plandaki SessionGuard kalp atışlarından gelen güncel rol ve kısıtlama verileriyle anlık UI güncellemesi.
+DOĞRULAMA:
+- `tests/test_control_plane_and_telemetry.py` altında `UserProfileWidget` testleri (heartbeat güncellemesi, rol biçimlendirme, askıya alma durumu, koyu/açık tema uyumu) başarıyla doğrulandı.
+- `QT_QPA_PLATFORM=offscreen` ile hem koyu hem açık mod araç çubuğu görüntüleri oluşturularak görsel tutarlılık teyit edildi.
 
 ========================================================================
 [v0.2.68.48] - Granüler GUI Panel/Modül Kısıtlama Sistemi, Dinamik Özel Rol/Keyword Etiketleri ve Canlı İzin Senkronizasyonu (2026-10-10)

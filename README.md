@@ -15,17 +15,18 @@ Serpent Studio, bağımsız ve taşınabilir bir **Linux AppImage** paketi olara
 
 ### 📥 1. İndirin / Download
 Yalnızca tek bir dosyayı indirmeniz yeterlidir:  
-👉 **[SerpentStudio-x86_64.AppImage](https://github.com/bkbariskucuk/serpent-studio/releases/latest/download/SerpentStudio-x86_64.AppImage)** *(~159 MB)*
+👉 **[Serpent Studio.AppImage](https://github.com/bkbariskucuk/serpent-studio/releases/latest/download/Serpent%20Studio.AppImage)** *(~134 MB)*  
+*(Alternatif doğrudan ikili dosya: [`Serpent Studio`](https://github.com/bkbariskucuk/serpent-studio/releases/latest/download/Serpent%20Studio))*
 
 Veya terminalden:
 ```bash
-wget https://github.com/bkbariskucuk/serpent-studio/releases/latest/download/SerpentStudio-x86_64.AppImage
+wget "https://github.com/bkbariskucuk/serpent-studio/releases/latest/download/Serpent%20Studio.AppImage"
 ```
 
 ### ⚡ 2. Çalıştırma İzni Verin ve Başlatın / Make Executable & Run
 ```bash
-chmod +x SerpentStudio-x86_64.AppImage
-./SerpentStudio-x86_64.AppImage
+chmod +x "Serpent Studio.AppImage"
+./"Serpent Studio.AppImage"
 ```
 *(Masaüstü ortamında dosyaya sağ tıklayıp **Özellikler -> İzinler -> Dosyayı bir program gibi çalıştırmaya izin ver** seçeneğini de işaretleyebilirsiniz).*
 
@@ -35,9 +36,11 @@ chmod +x SerpentStudio-x86_64.AppImage
 
 | Dosya Adı | Açıklama | Kullanıcı İndirmeli mi? |
 | :--- | :--- | :---: |
-| 🟢 **`SerpentStudio-x86_64.AppImage`** | **Ana çalıştırılabilir uygulama paketi.** Çift tıklayarak doğrudan çalışır. | **EVET (Tek gerekli dosya)** |
-| ⚙️ `SerpentStudio-x86_64.AppImage.zsync` | **Delta Güncelleme Haritası:** Uygulama içindeki otomatik güncelleyici yeni sürümlerde sadece değişen kod bloklarını (~2-5 MB) indirmek için bu dosyayı arka planda kullanır. | Otomatik (Uygulama arka planda okur) |
+| 🟢 **`Serpent Studio.AppImage`** | **Ana çalıştırılabilir uygulama paketi.** Çift tıklayarak doğrudan çalışır. | **EVET (Tek gerekli dosya)** |
+| 📦 **`Serpent Studio`** | **Doğrudan bağımsız çalıştırılabilir ikili dosya.** | İsteğe bağlı |
+| ⚙️ `Serpent Studio.AppImage.zsync` | **Delta Güncelleme Haritası:** Uygulama içindeki otomatik güncelleyici yeni sürümlerde sadece değişen kod bloklarını (~2-5 MB) indirmek için bu dosyayı arka planda kullanır. | Otomatik (Uygulama arka planda okur) |
 | 📋 `version_manifest.json` | **Sürüm Kontrol Metaverisi:** Uygulamanın menüsündeki *"Help -> Check for Updates..."* özelliği için canlı sürüm ve değişiklik notlarını barındırır. | Otomatik (Uygulama arka planda okur) |
+
 
 ---
 

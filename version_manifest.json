@@ -1,12 +1,12 @@
 {
-  "latest_version": "v0.2.68.48",
+  "latest_version": "v1.2.69.48",
   "min_supported_version": "v0.2.50.00",
   "mandatory": false,
   "release_date": "2026-10-10",
-  "release_title": "Serpent Studio v0.2.68.48",
-  "release_notes": "Granüler GUI Panel/Modül Kısıtlama Sistemi, Dinamik Özel Rol/Keyword Etiketleri ve Canlı İzin Senkronizasyonu",
-  "sha256": "118a3a08cfdeb72919219355497d7a2d3026a42c9f7906f5a0a1a6aa32f3fc55",
-  "file_size_bytes": 140732920,
-  "download_url": "https://github.com/bkbariskucuk/serpent-studio/releases/download/v0.2.68.48/SerpentStudio-x86_64.AppImage",
-  "zsync_url": "https://github.com/bkbariskucuk/serpent-studio/releases/download/v0.2.68.48/SerpentStudio-x86_64.AppImage.zsync"
+  "release_title": "Serpent Studio v1.2.69.48",
+  "release_notes": "Alfa Sürecine Resmi Geçiş (Alpha Release), Vektörel SVG Logo Entegrasyonu, Serpent Studio Paketlemesi ve Kararlı Demet-Lattice Ayrıştırması",
+  "sha256": "619d664953875bcad947616c1c4874cd72fdb4768639325af162c301d7721dc9",
+  "file_size_bytes": 140843512,
+  "download_url": "https://github.com/bkbariskucuk/serpent-studio/releases/download/v1.2.69.48/Serpent%20Studio.AppImage",
+  "zsync_url": "https://github.com/bkbariskucuk/serpent-studio/releases/download/v1.2.69.48/Serpent%20Studio.AppImage.zsync"
 }
