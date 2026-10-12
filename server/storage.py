@@ -99,6 +99,8 @@ class Backend:
             connection.execute('PRAGMA foreign_keys = ON')
             return connection
         try:
+            import os
+            import ssl
             from psycopg.conninfo import conninfo_to_dict
             from psycopg.rows import dict_row
             options = conninfo_to_dict(self._database_url)
@@ -107,13 +109,20 @@ class Backend:
             if host not in loopback or options.get('hostaddr', host) not in loopback:
                 if options.get('sslmode', 'verify-full') not in ('require', 'verify-ca', 'verify-full'):
                     raise ValueError('Remote PostgreSQL requires authenticated TLS.')
-                # Upgrade common provider URLs using sslmode=require to hostname
-                # verification instead of relying on encryption alone.
-                options['sslmode'] = 'verify-full'
-                options.setdefault('sslrootcert', 'system')
+                ca_candidates = [
+                    getattr(ssl.get_default_verify_paths(), 'cafile', None),
+                    '/etc/ssl/certs/ca-certificates.crt',
+                    '/etc/pki/tls/certs/ca-bundle.crt',
+                ]
+                ca_file = next((p for p in ca_candidates if p and os.path.isfile(p)), None)
+                if ca_file:
+                    options['sslmode'] = 'verify-full'
+                    options['sslrootcert'] = ca_file
+                else:
+                    options.setdefault('sslmode', 'require')
                 options['gssencmode'] = 'disable'
-            options.update(connect_timeout=10, application_name='serpent-control-plane',
-                           options='-c statement_timeout=10000 -c lock_timeout=5000')
+            options.setdefault('connect_timeout', 10)
+            options.setdefault('application_name', 'serpent-control-plane')
             return self._driver.connect(**options, row_factory=dict_row, prepare_threshold=None)
         except Exception as exc:
             # Driver errors can contain a DSN/credential. Never propagate their text.

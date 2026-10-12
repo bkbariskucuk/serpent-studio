@@ -26,6 +26,16 @@
 - Bu tarihçede `v0.1.17.15` kaydı yayımlanmamıştır; sonraki kayıt `v0.1.17.16` olarak devam eder.
 
 ========================================================================
+[v1.2.69.50] - Kalıcı Neon Veritabanı Entegrasyonu, Hız Sınırlayıcı (Rate Limiting) ve Güvenlik Sıkılaştırması (2026-10-12)
+------------------------------------------------------------------------
+KAPSAM:
+- Neon PostgreSQL entegrasyonu: Render geçici dosya sisteminden bağımsız, kalıcı ve güvenli bulut veritabanı bağlandı; sunucu güncellemelerinde kullanıcılar, oturumlar ve panel kısıtlamaları (restricted_panels) korunur.
+- Giriş Hız Sınırlaması (Login Rate Limiter): Brute-force saldırılarına karşı kayan pencere koruması eklendi; 5 dakikada 5 başarısız denemede istemci geçici olarak kilitlenir (HTTP 429).
+- CORS ve Köken Doğrulaması: Açık joker karakter (*) yerine yalnızca yetkili Host ve yerel kökenlere izin verildi.
+- Hassas Bilgi ve Gizlilik Korunması: render.yaml içindeki düz metin yönetici parolaları kaldırıldı, yerel veritabanı kopyaları temizlendi ve telemetride kullanıcı nükleer modellerinin gönderilmesi açık onaya bağlandı.
+- Docker ve Çalışma Zamanı Güvenliği: Konteyner root yetkisi yerine 'serpent' kullanıcısı ile çalıştırılır, sistem CA sertifikaları (/etc/ssl/certs/ca-certificates.crt) doğrulanır.
+
+========================================================================
 [v1.2.69.49] - Güvenli Oturum, İzin Teması ve Doğrulanmış Güncelleme Düzeltmeleri (2026-10-10)
 ------------------------------------------------------------------------
 KAPSAM:

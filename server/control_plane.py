@@ -43,6 +43,60 @@ MAX_REQUEST_BODY = 2 * 1024 * 1024
 REQUEST_TIMEOUT_SECONDS = 15
 MAX_CONCURRENT_REQUESTS = 32
 
+RATE_LIMIT_WINDOW_SECONDS = 300.0
+RATE_LIMIT_MAX_ATTEMPTS = 5
+RATE_LIMIT_LOCKOUT_SECONDS = 300.0
+
+
+class LoginRateLimiter:
+    """In-memory sliding window rate limiter to protect authentication endpoints."""
+
+    def __init__(self, max_attempts: int = RATE_LIMIT_MAX_ATTEMPTS,
+                 window_seconds: float = RATE_LIMIT_WINDOW_SECONDS,
+                 lockout_seconds: float = RATE_LIMIT_LOCKOUT_SECONDS) -> None:
+        self.max_attempts = max_attempts
+        self.window_seconds = window_seconds
+        self.lockout_seconds = lockout_seconds
+        self._lock = threading.Lock()
+        self._failures: Dict[str, List[float]] = {}
+        self._lockouts: Dict[str, float] = {}
+
+    def is_locked(self, key: str) -> Tuple[bool, int]:
+        now = time.time()
+        with self._lock:
+            lockout_until = self._lockouts.get(key, 0.0)
+            if now < lockout_until:
+                return True, max(1, int(lockout_until - now))
+            if key in self._lockouts:
+                del self._lockouts[key]
+            return False, 0
+
+    def record_failure(self, key: str) -> Tuple[bool, int]:
+        now = time.time()
+        with self._lock:
+            timestamps = [t for t in self._failures.get(key, []) if now - t < self.window_seconds]
+            timestamps.append(now)
+            self._failures[key] = timestamps
+            if len(timestamps) >= self.max_attempts:
+                lockout_until = now + self.lockout_seconds
+                self._lockouts[key] = lockout_until
+                self._failures.pop(key, None)
+                return True, int(self.lockout_seconds)
+            return False, 0
+
+    def record_success(self, key: str) -> None:
+        with self._lock:
+            self._failures.pop(key, None)
+            self._lockouts.pop(key, None)
+
+    def reset_for_tests(self) -> None:
+        with self._lock:
+            self._failures.clear()
+            self._lockouts.clear()
+
+
+LOGIN_RATE_LIMITER = LoginRateLimiter()
+
 
 def validate_storage_configuration(db_path: str, database_url: str = '') -> None:
     """On Render, refuse SQLite on the ephemeral application filesystem."""
@@ -478,6 +532,26 @@ class ControlPlaneHandler(http.server.BaseHTTPRequestHandler):
         # Request targets, driver exception strings, and bodies can contain secrets.
         logger.debug("Control-plane HTTP request handled")
 
+    def _client_ip(self) -> str:
+        forwarded = self.headers.get("X-Forwarded-For", "")
+        if forwarded:
+            return forwarded.split(",")[0].strip()
+        if self.client_address:
+            return str(self.client_address[0])
+        return "127.0.0.1"
+
+    def _get_allowed_origin(self) -> Optional[str]:
+        origin = self.headers.get("Origin")
+        if not origin:
+            return None
+        parsed = urllib.parse.urlparse(origin)
+        host_header = self.headers.get("Host", "").strip()
+        if parsed.netloc and host_header and parsed.netloc.lower() == host_header.lower():
+            return origin
+        if parsed.hostname in ("127.0.0.1", "localhost", "::1"):
+            return origin
+        return None
+
     def _send_json(self, status_code: int, data: Dict[str, Any]) -> None:
         payload = json.dumps(data, ensure_ascii=False).encode("utf-8")
         self.send_response(status_code)
@@ -485,9 +559,14 @@ class ControlPlaneHandler(http.server.BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(payload)))
         self.send_header("Cache-Control", "no-store")
         self.send_header("X-Content-Type-Options", "nosniff")
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS, DELETE")
+        allowed_origin = self._get_allowed_origin()
+        if allowed_origin:
+            self.send_header("Access-Control-Allow-Origin", allowed_origin)
+            self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
+            self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS, DELETE")
+            self.send_header("Vary", "Origin")
+        if status_code == 429 and "retry_after" in data:
+            self.send_header("Retry-After", str(data["retry_after"]))
         self.end_headers()
         self.wfile.write(payload)
 
@@ -542,10 +621,13 @@ class ControlPlaneHandler(http.server.BaseHTTPRequestHandler):
         return ""
 
     def do_OPTIONS(self) -> None:
+        allowed_origin = self._get_allowed_origin()
         self.send_response(204)
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS, DELETE")
+        if allowed_origin:
+            self.send_header("Access-Control-Allow-Origin", allowed_origin)
+            self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
+            self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS, DELETE")
+            self.send_header("Vary", "Origin")
         self.end_headers()
 
     def do_GET(self) -> None:
@@ -611,6 +693,16 @@ class ControlPlaneHandler(http.server.BaseHTTPRequestHandler):
 
         # Client Authentication Endpoint
         if path in ("/v1/auth/login", "/api/v1/auth/login"):
+            client_ip = self._client_ip()
+            locked, remaining = LOGIN_RATE_LIMITER.is_locked(client_ip)
+            if locked:
+                self._send_json(429, {
+                    "status": "error",
+                    "message": f"Too many failed login attempts. Please wait {remaining} seconds before retrying.",
+                    "retry_after": remaining,
+                })
+                return
+
             username = str(body.get("username", "")).strip().lower()
             password = str(body.get("password", ""))
             client_version = str(body.get("client_version", ""))
@@ -618,8 +710,18 @@ class ControlPlaneHandler(http.server.BaseHTTPRequestHandler):
 
             user = self.db.get_user(username)
             if not user or not verify_password(password, user["password_hash"], user["salt"]):
-                self._send_json(401, {"status": "error", "message": "Invalid username or password."})
+                locked_now, wait_time = LOGIN_RATE_LIMITER.record_failure(client_ip)
+                if locked_now:
+                    self._send_json(429, {
+                        "status": "error",
+                        "message": f"Too many failed login attempts. Account temporarily locked for {wait_time} seconds.",
+                        "retry_after": wait_time,
+                    })
+                else:
+                    self._send_json(401, {"status": "error", "message": "Invalid username or password."})
                 return
+
+            LOGIN_RATE_LIMITER.record_success(client_ip)
 
             if not user.get("is_active"):
                 self._send_json(403, {"status": "error", "message": "Account suspended by administrator."})
@@ -736,16 +838,35 @@ class ControlPlaneHandler(http.server.BaseHTTPRequestHandler):
         valid, session_data = self.db.verify_and_touch_session(token)
 
         if path == "/admin/api/login":
+            client_ip = self._client_ip()
+            locked, remaining = LOGIN_RATE_LIMITER.is_locked(client_ip)
+            if locked:
+                self._send_json(429, {
+                    "status": "error",
+                    "message": f"Too many failed login attempts. Please wait {remaining} seconds before retrying.",
+                    "retry_after": remaining,
+                })
+                return
+
             u = str(body.get("username", "")).strip().lower()
             p = str(body.get("password", ""))
             user = self.db.get_user(u)
             if (user and user["role"] == "administrator" and user["is_active"]
                     and (not user["expires_at"] or user["expires_at"] > time.time())
                     and verify_password(p, user["password_hash"], user["salt"])):
+                LOGIN_RATE_LIMITER.record_success(client_ip)
                 adm_token = self.db.create_session(user["id"], user["username"], "web-admin", "browser")
                 self._send_json(200, {"status": "ok", "token": adm_token, "username": user["username"]})
             else:
-                self._send_json(401, {"status": "error", "message": "Invalid administrator credentials."})
+                locked_now, wait_time = LOGIN_RATE_LIMITER.record_failure(client_ip)
+                if locked_now:
+                    self._send_json(429, {
+                        "status": "error",
+                        "message": f"Too many failed login attempts. Account temporarily locked for {wait_time} seconds.",
+                        "retry_after": wait_time,
+                    })
+                else:
+                    self._send_json(401, {"status": "error", "message": "Invalid administrator credentials."})
             return
 
         if path.startswith("/admin/api/"):

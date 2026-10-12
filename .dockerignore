@@ -1,8 +1,16 @@
-# Server-only allowlist: never send credentials, databases or user workspaces.
-*
-!Dockerfile
-!.dockerignore
-!server/
-server/*
-!server/*.py
-!server/requirements.txt
+__pycache__
+*.pyc
+.git
+.github
+tests/
+packaging/
+build/
+docs/
+*.AppImage
+*.db
+server/*.db
+credentials.json
+local_credentials.json
+auth_session.json
+*.sqlite
+*.sqlite3
