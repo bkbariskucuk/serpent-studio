@@ -1,12 +1,12 @@
 {
-  "latest_version": "v1.2.69.51",
+  "latest_version": "v1.2.70.52",
   "min_supported_version": "v0.2.50.00",
   "mandatory": false,
   "release_date": "2026-10-12",
-  "release_title": "Serpent Studio v1.2.69.51",
-  "release_notes": "Analiz çıktıları ve grafiklerinde eksiksiz çok dilli (i18n) yerelleştirme",
-  "sha256": "2dddb66c3d1ac13c6c2f8dee991556438100f1da93270187b4f0a689625ad014",
-  "file_size_bytes": 139737592,
-  "download_url": "https://github.com/bkbariskucuk/serpent-studio/releases/download/v1.2.69.51/Serpent.Studio.AppImage",
-  "zsync_url": "https://github.com/bkbariskucuk/serpent-studio/releases/download/v1.2.69.51/Serpent.Studio.AppImage.zsync"
+  "release_title": "Serpent Studio v1.2.70.52",
+  "release_notes": "Serpent Studio v1.2.70.52",
+  "sha256": "c8f8e8eaee5a79b8ca00177dbab0adb14758bff13e1bcaf1d73cdad52542a080",
+  "file_size_bytes": 139880952,
+  "download_url": "https://github.com/bkbariskucuk/serpent-studio/releases/download/v1.2.70.52/Serpent.Studio.AppImage",
+  "zsync_url": "https://github.com/bkbariskucuk/serpent-studio/releases/download/v1.2.70.52/Serpent.Studio.AppImage.zsync"
 }
