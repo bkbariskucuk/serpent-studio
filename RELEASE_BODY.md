@@ -1,6 +1,6 @@
-# Serpent Studio v1.2.69.51 (Alpha)
+# Serpent Studio v1.2.70.52 (Alpha)
 
-[Serpent.Studio.AppImage indir](https://github.com/bkbariskucuk/serpent-studio/releases/download/v1.2.69.51/Serpent.Studio.AppImage)
+[Serpent.Studio.AppImage indir](https://github.com/bkbariskucuk/serpent-studio/releases/download/v1.2.70.52/Serpent.Studio.AppImage)
 
 ```bash
 chmod +x Serpent.Studio.AppImage
@@ -9,12 +9,13 @@ chmod +x Serpent.Studio.AppImage
 
 Linux x86_64 (Ubuntu 20.04 / Debian 11 ve üzeri). FUSE bulunmayan sistemlerde `--appimage-extract-and-run` parametresiyle çalıştırılabilir. Python veya ek bağımlılık kurulumu gerektirmez.
 
-## v1.2.69.51 ile Gelen İyileştirmeler
+## v1.2.70.52 ile Gelen İyileştirmeler
 
-* **Analiz Grafikleri Tam Dil Uyumu (TR/EN):** Tüm reaktör fiziği analiz çıktıları (k-etkin, PPF, eksenel akı profili, dönüşüm oranı, letarji/enerji spektrumu, gecikmiş nötron öncüleri, tükenme ve kinetik analizleri) başlık, eksen, referans çizgisi ve göstergeleriyle çalışma zamanında çift dilli hale getirildi.
-* **Dinamik Açılır Kutu ve Navigasyon Güncellemesi:** Dil değiştirildiğinde grafik açılır menüleri, eksen seçimleri ve PPF çekirdek haritası seyir kontrolleri seçili veriyi kaybetmeden anında yeni dilde güncellenir.
-* **Fizik Metrikleri ve Çözücü Göstergeleri:** Özet metrikler tablosundaki 50'den fazla reaktör fiziği değişken adı ve nötron spektrum tanı göstergeleri eksiksiz yerelleştirildi.
-* **Kararlılık ve Ölçek Doğrulaması:** Grafik ölçek rozetleri ve çift dilli bileşenler için kapsamlı test doğrulaması tamamlandı.
+* **Sağ Alt Oturum Doğrulama Bildirimi:** Ağ kesintileri ve geçici kalp atışı hatalarında kullanıcı ekranını kilitleyen modal pencereler kaldırıldı. Sağ altta konumlanan, otomatik kapanan `SessionNotificationPopup` eklendi; kullanıcı aktifken arka planda otomatik onaylanır ve çalışma asla kilitlenmez.
+* **Kapsamlı Serpent ve Nükleer Kütüphane Doğrulayıcısı:** Standart olmayan ortamlarda Serpent ikili dosyası (`sss2`) ve nükleer veri kütüphanelerini (`acelib`, `declib`, `nfylib`, `photonlib`) tespit eden derin tarayıcı ve doğrulayıcı geliştirildi. ELF başlık denetimi, kesin sürüm çıkarımı, `.xsdata` izotop sayımı ve Ayarlar sekmesinde görsel tanı paneli eklendi.
+* **Analiz Çıktıları Editöre Dön Butonu:** Analiz sayfasındaki "Back to Editor" butonu açık ve koyu temalara tam uyumlu, belirgin çerçeveli ve yüksek kontrastlı hale getirildi.
+* **İçe Aktarma Masaüstü Kısayolu:** Dosya içe aktarma diyaloğu sol çubuğuna doğrudan "Masaüstü / Desktop", "Çalışma Alanı / Workspace" ve "Ev Dizini / Home" kısayol butonları entegre edildi.
+* **Yönetim Paneli Hata Tekilleştirme & Zengin Telemetri:** `/admin` kontrol panelinde sürekli tekrar eden hatalar tekilleştirildi (`occurrence_count`, `call_site`, `fingerprint`), "Benzersiz Hatalar" görünümü ve detaylı hata inceleme modalı eklendi.
 
 ## İndirme ve Doğrulama
 

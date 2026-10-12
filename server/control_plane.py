@@ -18,6 +18,7 @@ import http.server
 import json
 import logging
 import os
+import re
 import secrets
 import sqlite3
 import sys
@@ -132,6 +133,21 @@ def verify_password(password: str, expected_hash: str, salt: str) -> bool:
         return False
 
 
+def compute_error_fingerprint(exception_type: str, exception_message: str, traceback_str: str) -> str:
+    """Compute a stable hash identifying the unique root failure site for error deduplication."""
+    last_frame = ""
+    if traceback_str:
+        frames = re.findall(r'File "([^"]+)", line (\d+), in (\w+)', traceback_str)
+        if frames:
+            file_path, line_no, func_name = frames[-1]
+            last_frame = f"{os.path.basename(file_path)}:{line_no}:{func_name}"
+
+    clean_msg = re.sub(r'0x[0-9a-fA-F]+', '<hex>', exception_message or "")
+    clean_msg = re.sub(r'\b\d+\b', '<num>', clean_msg)[:120]
+    key = f"{exception_type}:{last_frame}:{clean_msg}".strip()
+    return hashlib.sha256(key.encode("utf-8")).hexdigest()[:16]
+
+
 class Database:
     def __init__(self, db_path: str = DB_PATH, *, admin_username: Optional[str] = None, admin_password: Optional[str] = None,
                  database_url: str = '', bootstrap_admin: bool = True) -> None:
@@ -214,6 +230,22 @@ class Database:
             cols = [r["name"] for r in cursor.fetchall()]
             if "restricted_panels" not in cols:
                 cursor.execute("ALTER TABLE users ADD COLUMN restricted_panels TEXT DEFAULT '[]'")
+
+            # Ensure error_reports deduplication columns exist
+            if self._backend.postgres:
+                cursor.execute("SELECT column_name AS name FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='error_reports'")
+            else:
+                cursor.execute("PRAGMA table_info(error_reports)")
+            err_cols = [r["name"] for r in cursor.fetchall()]
+            if "fingerprint" not in err_cols:
+                cursor.execute("ALTER TABLE error_reports ADD COLUMN fingerprint TEXT")
+            if "occurrence_count" not in err_cols:
+                cursor.execute("ALTER TABLE error_reports ADD COLUMN occurrence_count INTEGER DEFAULT 1")
+            if "last_seen" not in err_cols:
+                cursor.execute(f"ALTER TABLE error_reports ADD COLUMN last_seen {timestamp_type}")
+            if "extra_context" not in err_cols:
+                cursor.execute("ALTER TABLE error_reports ADD COLUMN extra_context TEXT DEFAULT '{}'")
+
             if bootstrap_admin:
                 self._bootstrap_admin(cursor)
             conn.commit()
@@ -431,27 +463,97 @@ class Database:
     def record_error(
         self, username: str, app_version: str, platform: str,
         exception_type: str, exception_message: str, traceback_str: str,
-        active_tab: str = "", recent_logs: str = ""
+        active_tab: str = "", recent_logs: str = "", extra_context: Optional[Dict[str, Any]] = None
     ) -> int:
+        fp = compute_error_fingerprint(exception_type, exception_message, traceback_str)
+        now = time.time()
+        extra_ctx_str = json.dumps(extra_context or {})
+
         with self._lock, self._get_conn() as conn:
             cur = conn.cursor()
+            cur.execute("SELECT id, occurrence_count, username FROM error_reports WHERE fingerprint = ? ORDER BY timestamp DESC LIMIT 1", (fp,))
+            existing = cur.fetchone()
+            if existing:
+                row_id = existing['id']
+                count = (existing['occurrence_count'] or 1) + 1
+                cur.execute("""
+                    UPDATE error_reports
+                    SET occurrence_count = ?,
+                        last_seen = ?,
+                        timestamp = ?,
+                        recent_logs = ?,
+                        active_tab = ?,
+                        app_version = ?,
+                        extra_context = ?
+                    WHERE id = ?
+                """, (count, now, now, recent_logs, active_tab, app_version, extra_ctx_str, row_id))
+                conn.commit()
+                return row_id
+
             sql = """
                 INSERT INTO error_reports
-                (username, app_version, platform, exception_type, exception_message, traceback, active_tab, recent_logs, timestamp)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (username, app_version, platform, exception_type, exception_message, traceback, active_tab, recent_logs, timestamp, fingerprint, occurrence_count, last_seen, extra_context)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
             """
             if self._backend.postgres:
                 sql += " RETURNING id"
-            cur.execute(sql, (username, app_version, platform, exception_type, exception_message, traceback_str, active_tab, recent_logs, time.time()))
+            cur.execute(sql, (
+                username, app_version, platform, exception_type, exception_message,
+                traceback_str, active_tab, recent_logs, now, fp, now, extra_ctx_str
+            ))
             row_id = cur.fetchone()['id'] if self._backend.postgres else cur.lastrowid
             conn.commit()
             return row_id
 
-    def list_errors(self, limit: int = 100) -> List[Dict[str, Any]]:
+    def list_errors(self, limit: int = 200, unique_only: bool = True) -> List[Dict[str, Any]]:
         with self._lock, self._get_conn() as conn:
             cur = conn.cursor()
             cur.execute("SELECT * FROM error_reports ORDER BY timestamp DESC LIMIT ?", (limit,))
-            return [dict(r) for r in cur.fetchall()]
+            rows = [dict(r) for r in cur.fetchall()]
+
+            for r in rows:
+                if not r.get("fingerprint"):
+                    r["fingerprint"] = compute_error_fingerprint(r.get("exception_type", ""), r.get("exception_message", ""), r.get("traceback", ""))
+                if not r.get("occurrence_count"):
+                    r["occurrence_count"] = 1
+                if not r.get("last_seen"):
+                    r["last_seen"] = r.get("timestamp")
+                r["first_seen"] = r.get("timestamp")
+
+                tb = r.get("traceback", "")
+                frames = re.findall(r'File "([^"]+)", line (\d+), in (\w+)', tb)
+                if frames:
+                    f_name = os.path.basename(frames[-1][0])
+                    r["call_site"] = f"{f_name}:{frames[-1][1]} in {frames[-1][2]}()"
+                else:
+                    r["call_site"] = r.get("active_tab") or "-"
+
+            if unique_only:
+                grouped: Dict[str, Dict[str, Any]] = {}
+                for r in rows:
+                    fp = r["fingerprint"]
+                    if fp not in grouped:
+                        grouped[fp] = dict(r)
+                        grouped[fp]["users"] = [r["username"]]
+                    else:
+                        grouped[fp]["occurrence_count"] = (grouped[fp].get("occurrence_count", 1) or 1) + (r.get("occurrence_count", 1) or 1)
+                        if r["timestamp"] > grouped[fp]["timestamp"]:
+                            grouped[fp]["last_seen"] = r["timestamp"]
+                            grouped[fp]["timestamp"] = r["timestamp"]
+                            grouped[fp]["recent_logs"] = r.get("recent_logs")
+                            grouped[fp]["app_version"] = r.get("app_version")
+                            grouped[fp]["active_tab"] = r.get("active_tab")
+                        if r["timestamp"] < grouped[fp].get("first_seen", float("inf")):
+                            grouped[fp]["first_seen"] = r["timestamp"]
+                        u = r["username"]
+                        if u not in grouped[fp]["users"]:
+                            grouped[fp]["users"].append(u)
+
+                res = list(grouped.values())
+                res.sort(key=lambda x: x.get("last_seen", x.get("timestamp", 0)), reverse=True)
+                return res
+
+            return rows
 
     def record_script(self, username: str, project_name: str, script_content: str) -> int:
         with self._lock, self._get_conn() as conn:
@@ -660,8 +762,11 @@ class ControlPlaneHandler(http.server.BaseHTTPRequestHandler):
                 return
 
             if path == "/admin/api/errors":
-                errors = self.db.list_errors()
-                self._send_json(200, {"status": "ok", "errors": errors})
+                query_params = urllib.parse.parse_qs(parsed.query)
+                unique_param = query_params.get("unique", ["1"])[0]
+                unique_mode = unique_param not in ("0", "false")
+                errors = self.db.list_errors(unique_only=unique_mode)
+                self._send_json(200, {"status": "ok", "errors": errors, "unique_mode": unique_mode})
                 return
 
             if path == "/admin/api/scripts":
@@ -812,6 +917,7 @@ class ControlPlaneHandler(http.server.BaseHTTPRequestHandler):
                 traceback_str=str(body.get("traceback", "")),
                 active_tab=str(body.get("active_tab", "")),
                 recent_logs=str(body.get("recent_logs", "")),
+                extra_context=body.get("extra_context"),
             )
             self._send_json(200, {"status": "ok", "report_id": rep_id, "message": "Error report recorded."})
             return
@@ -1761,26 +1867,33 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
             </div>
             <div class="card-subtitle">Test esnasında alınan unhandled exception ve çökmeler anlık olarak buraya düşer.</div>
           </div>
-          <div class="search-input-wrap">
-            <svg class="search-icon-svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-            <input type="text" class="search-input" id="searchErrors" placeholder="Hata türü veya kullanıcı ara..." oninput="filterErrors()">
+          <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+            <div class="search-input-wrap">
+              <svg class="search-icon-svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              <input type="text" class="search-input" id="searchErrors" placeholder="Hata türü, dosya veya kullanıcı ara..." oninput="filterErrors()">
+            </div>
+            <div style="display: flex; gap: 4px; background: var(--bg-surface); padding: 2px; border-radius: 6px; border: 1px solid var(--border-default);">
+              <button id="btnErrorsUnique" class="btn btn-secondary active" style="font-size: 11px; padding: 4px 10px; border: none;" onclick="toggleErrorsView(true)">Benzersiz Hatalar</button>
+              <button id="btnErrorsAll" class="btn btn-secondary" style="font-size: 11px; padding: 4px 10px; border: none;" onclick="toggleErrorsView(false)">Tüm Kayıtlar</button>
+            </div>
           </div>
         </div>
         <div class="table-container">
           <table>
             <thead>
               <tr>
-                <th>Zaman</th>
-                <th>Tester</th>
-                <th>Hata Türü</th>
+                <th>Son Görülme</th>
+                <th>Tekrar</th>
+                <th>Hata & Çağrı Konumu</th>
                 <th>Hata Mesajı</th>
+                <th>Tester(lar)</th>
                 <th>Sekme</th>
                 <th>Sürüm</th>
-                <th>Detay</th>
+                <th>İşlem</th>
               </tr>
             </thead>
             <tbody id="errorsTableBody">
-              <tr><td colspan="7" style="text-align: center; color: var(--text-muted); padding: 20px;">Hata kaydı bulunmuyor.</td></tr>
+              <tr><td colspan="8" style="text-align: center; color: var(--text-muted); padding: 20px;">Hata kaydı bulunmuyor.</td></tr>
             </tbody>
           </table>
         </div>
@@ -2238,14 +2351,34 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
       }
       const filtered = errorsCache.filter(e => 
         (e.username && e.username.toLowerCase().includes(query)) ||
+        (e.users && e.users.some(u => u.toLowerCase().includes(query))) ||
         (e.exception_type && e.exception_type.toLowerCase().includes(query)) ||
-        (e.exception_message && e.exception_message.toLowerCase().includes(query))
+        (e.exception_message && e.exception_message.toLowerCase().includes(query)) ||
+        (e.call_site && e.call_site.toLowerCase().includes(query))
       );
       renderErrorsTable(filtered);
     }
 
+    let errorsUniqueMode = true;
+
+    function toggleErrorsView(isUnique) {
+      errorsUniqueMode = isUnique;
+      const btnU = document.getElementById('btnErrorsUnique');
+      const btnA = document.getElementById('btnErrorsAll');
+      if (btnU && btnA) {
+        if (isUnique) {
+          btnU.classList.add('active');
+          btnA.classList.remove('active');
+        } else {
+          btnU.classList.remove('active');
+          btnA.classList.add('active');
+        }
+      }
+      loadErrors();
+    }
+
     function loadErrors() {
-      apiCall('/admin/api/errors').then(data => {
+      apiCall('/admin/api/errors?unique=' + (errorsUniqueMode ? '1' : '0')).then(data => {
         errorsCache = data.errors || [];
         updateStats();
         renderErrorsTable(errorsCache);
@@ -2256,18 +2389,60 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
       const tbody = document.getElementById('errorsTableBody');
       tbody.innerHTML = '';
       if (!list || list.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding:24px; color:var(--text-muted);">Henüz kaydedilmiş hata yok.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; padding:24px; color:var(--text-muted);">Henüz kaydedilmiş hata yok.</td></tr>';
         return;
       }
       list.forEach(e => {
         const tr = document.createElement('tr');
-        const timeStr = new Date(e.timestamp * 1000).toLocaleString('tr-TR');
+        const timeVal = e.last_seen || e.timestamp;
+        const timeStr = timeVal ? new Date(timeVal * 1000).toLocaleString('tr-TR') : '-';
         textCell(tr, timeStr);
-        textCell(tr, e.username);
-        const exCell = textCell(tr, e.exception_type);
-        exCell.style.color = 'var(--terracotta)';
-        exCell.style.fontWeight = '600';
-        textCell(tr, String(e.exception_message || '').substring(0, 50) + '...');
+
+        // Occurrence count badge
+        const count = e.occurrence_count || 1;
+        const countCell = textCell(tr, '');
+        const countBadge = document.createElement('span');
+        countBadge.style.display = 'inline-block';
+        countBadge.style.padding = '2px 8px';
+        countBadge.style.borderRadius = '10px';
+        countBadge.style.fontWeight = '800';
+        countBadge.style.fontSize = '11px';
+        if (count > 5) {
+          countBadge.style.backgroundColor = 'var(--terracotta)';
+          countBadge.style.color = '#FFFFFF';
+        } else if (count > 1) {
+          countBadge.style.backgroundColor = '#D97706';
+          countBadge.style.color = '#FFFFFF';
+        } else {
+          countBadge.style.backgroundColor = 'var(--surface-hover)';
+          countBadge.style.color = 'var(--text-muted)';
+        }
+        countBadge.textContent = count + 'x';
+        countCell.appendChild(countBadge);
+
+        // Exception type & Call site
+        const exCell = document.createElement('td');
+        const exTitle = document.createElement('div');
+        exTitle.style.color = 'var(--terracotta)';
+        exTitle.style.fontWeight = '700';
+        exTitle.textContent = e.exception_type || 'Unknown';
+        exCell.appendChild(exTitle);
+        if (e.call_site && e.call_site !== '-') {
+          const csLabel = document.createElement('div');
+          csLabel.style.fontSize = '10px';
+          csLabel.style.color = 'var(--text-muted)';
+          csLabel.style.fontFamily = 'monospace';
+          csLabel.textContent = e.call_site;
+          exCell.appendChild(csLabel);
+        }
+        tr.appendChild(exCell);
+
+        textCell(tr, String(e.exception_message || '').substring(0, 50) + (String(e.exception_message || '').length > 50 ? '...' : ''));
+
+        // Testers
+        const usersStr = (e.users && e.users.length > 0) ? e.users.join(', ') : (e.username || '-');
+        textCell(tr, usersStr);
+
         textCell(tr, e.active_tab || '-');
         textCell(tr, e.app_version || '-');
         actionButton(textCell(tr, ''), 'Detay İncele', () => showTraceback(e), 'btn-secondary');
@@ -2276,8 +2451,34 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
     }
 
     function showTraceback(e) {
-      document.getElementById('modalTitle').innerText = `Hata: ${e.exception_type} (${e.username})`;
-      document.getElementById('modalBody').innerText = `Kullanıcı: ${e.username}\nSürüm: ${e.app_version}\nPlatform: ${e.platform}\nAktif Sekme: ${e.active_tab}\nZaman: ${new Date(e.timestamp * 1000).toLocaleString('tr-TR')}\nMesaj: ${e.exception_message}\n\n[TRACEBACK]:\n${e.traceback}\n\n[LOGLAR]:\n${e.recent_logs || '-'}`;
+      document.getElementById('modalTitle').innerText = `Hata Detayı: ${e.exception_type} (${e.occurrence_count || 1}x Tekrar)`;
+      const firstStr = e.first_seen ? new Date(e.first_seen * 1000).toLocaleString('tr-TR') : '-';
+      const lastStr = new Date((e.last_seen || e.timestamp) * 1000).toLocaleString('tr-TR');
+      const usersStr = (e.users && e.users.length > 0) ? e.users.join(', ') : e.username;
+
+      let overview = `=======================================================\n` +
+                     `HATA DETAYI & GELİŞTİRİCİ RAPORU\n` +
+                     `=======================================================\n` +
+                     `Hata Türü      : ${e.exception_type}\n` +
+                     `Hata Mesajı    : ${e.exception_message}\n` +
+                     `Çağrı Konumu   : ${e.call_site || '-'}\n` +
+                     `Tekrar Sayısı  : ${e.occurrence_count || 1} kez kaydedildi\n` +
+                     `İlk Görülme    : ${firstStr}\n` +
+                     `Son Görülme    : ${lastStr}\n` +
+                     `Etkilenenler   : ${usersStr}\n` +
+                     `Sürüm          : ${e.app_version || '-'}\n` +
+                     `Platform       : ${e.platform || '-'}\n` +
+                     `Aktif Sekme    : ${e.active_tab || '-'}\n\n` +
+                     `=======================================================\n` +
+                     `[PYTHON TRACEBACK]:\n` +
+                     `=======================================================\n` +
+                     `${e.traceback || 'Traceback bulunmuyor'}\n\n` +
+                     `=======================================================\n` +
+                     `[SON UYGULAMA LOGLARI]:\n` +
+                     `=======================================================\n` +
+                     `${e.recent_logs || 'Log bulunmuyor'}\n`;
+
+      document.getElementById('modalBody').innerText = overview;
       document.getElementById('detailModal').style.display = 'flex';
     }
 
