@@ -19,6 +19,8 @@ docs/
 .agents/
 AGENTS.md
 CLAUDE.md
+RELEASE_NOTES.txt
+server/README.md
 
 # Packaging Engine & Local Scripts
 packaging/
