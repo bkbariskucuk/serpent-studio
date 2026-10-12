@@ -1,12 +1,12 @@
 {
-  "latest_version": "v1.2.69.48",
+  "latest_version": "v1.2.69.50",
   "min_supported_version": "v0.2.50.00",
   "mandatory": false,
-  "release_date": "2026-10-10",
-  "release_title": "Serpent Studio v1.2.69.48",
-  "release_notes": "Alfa Sürecine Resmi Geçiş (Alpha Release), Vektörel SVG Logo Entegrasyonu, Serpent Studio Paketlemesi ve Kararlı Demet-Lattice Ayrıştırması",
-  "sha256": "619d664953875bcad947616c1c4874cd72fdb4768639325af162c301d7721dc9",
-  "file_size_bytes": 140843512,
-  "download_url": "https://github.com/bkbariskucuk/serpent-studio/releases/download/v1.2.69.48/Serpent.Studio.AppImage",
-  "zsync_url": "https://github.com/bkbariskucuk/serpent-studio/releases/download/v1.2.69.48/Serpent.Studio.AppImage.zsync"
+  "release_date": "2026-10-12",
+  "release_title": "Serpent Studio v1.2.69.50",
+  "release_notes": "v1.2.69.50: Neon PostgreSQL entegrasyonu, kalıcı oturumlar, giriş hız sınırlayıcı ve güvenlik sıkılaştırması",
+  "sha256": "e15f182f3b9f05a1d59fb0e959e7bb46e616d77301cb54792a0dd0e7960ff9bd",
+  "file_size_bytes": 139684344,
+  "download_url": "https://github.com/bkbariskucuk/serpent-studio/releases/download/v1.2.69.50/Serpent.Studio.AppImage",
+  "zsync_url": "https://github.com/bkbariskucuk/serpent-studio/releases/download/v1.2.69.50/Serpent.Studio.AppImage.zsync"
 }
