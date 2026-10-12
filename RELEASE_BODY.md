@@ -1,6 +1,6 @@
-# Serpent Studio v1.2.69.49 (Alpha)
+# Serpent Studio v1.2.69.50 (Alpha)
 
-[Serpent.Studio.AppImage indir](https://github.com/bkbariskucuk/serpent-studio/releases/download/v1.2.69.49/Serpent.Studio.AppImage)
+[Serpent.Studio.AppImage indir](https://github.com/bkbariskucuk/serpent-studio/releases/download/v1.2.69.50/Serpent.Studio.AppImage)
 
 ```bash
 chmod +x Serpent.Studio.AppImage
@@ -9,17 +9,14 @@ chmod +x Serpent.Studio.AppImage
 
 Linux x86_64; GLIBC 2.31 veya üzeri. FUSE yoksa `--appimage-extract-and-run` kullanılabilir. Python/Conda kurulumu gerekmez; Serpent hesap motoru ve lisanslı veri kütüphaneleri pakete dahil değildir.
 
-v1.2.69.48 veya daha eski sürümden ilk geçişte çalışmalarınızı kaydedip uygulamayı kapatın ve yukarıdaki yeni AppImage'ı doğrudan indirin. Eski istemcinin güncelleyicisindeki güvenlik/kapanış düzeltmeleri ancak yeni uygulama açıldığında etkinleşir.
+## v1.2.69.50 Yenilikleri ve Güvenlik Sıkılaştırması
 
-## Düzeltmeler
-
-- View Panel Permissions penceresinde açık/koyu tema uyumu.
-- Paketli uygulamada sunucu doğrulamasını atlayan yerel hesap ve geliştirme değişkeni yollarının kapatılması.
-- Hatırlanan oturumun çevrimiçi doğrulanması, geç ağ yanıtlarına karşı token güvenliği ve çalışma kaybetmeyen oturum kilidi.
-- Geometri ve ayrık pencere izinleri; `--no-splash` başlangıcında da oturum denetimi.
-- Güvenli sunucu adresi ayarı ve uzak parola değiştirme desteği.
-- Staging, SHA-256 doğrulaması ve atomik değiştirme kullanan güncelleme; gerçek timeout, zorunlu güncelleme ve güvenli restart davranışı.
-- GitHub dosya/URL/zsync eşleşmesi; bütün ELF dosyalarında GLIBC sınırı ve hata gizlemeyen GUI smoke testi.
+- **Kalıcı Neon PostgreSQL Entegrasyonu:** Render Free Web Service ephemeral dosya sistemi sınırlamasından bağımsız, kalıcı bulut veritabanı bağlandı. Sunucu güncellemelerinde veya yeniden başlatmalarda kullanıcı hesapları, oturumlar ve panel erişim kısıtlamaları (`restricted_panels`) korunur.
+- **Giriş Hız Sınırlayıcı (Rate Limiting):** Kaba kuvvet (brute-force) saldırılarına karşı kayan pencere algoritmasıyla 5 dakikada 5 başarısız denemede IP geçici olarak kilitlenir (HTTP 429).
+- **CORS ve Köken Sıkılaştırması:** Açık joker karakter (`*`) kaldırılarak yalnızca yetkili sunucu Host ve güvenli yerel kökenlere izin verildi.
+- **Gizlilik ve Telemetri Koruması:** Kullanıcı nükleer modellerinin telemetriye gönderilmesi varsayılan olarak engellendi; açık kullanıcı onayına (`telemetry/share_scripts`) bağlandı.
+- **Konteyner ve Çalışma Zamanı Güvenliği:** Konteyner root yerine `serpent` (UID 10001) kullanıcısı ile çalıştırılır, sistem CA sertifikaları (/etc/ssl/certs/ca-certificates.crt) doğrulanır.
+- **render.yaml Temizliği:** Kod deposundaki düz metin yönetici parolaları ve hassas değişkenler temizlendi (`sync: false`).
 
 ## Dosyalar ve doğrulama
 
@@ -27,16 +24,10 @@ Yalnız `Serpent.Studio.AppImage` indirmeniz yeterlidir. `Serpent.Studio` aynı 
 
 İndirdiğiniz dosyanın SHA-256 özetini bu sürümün `SHA256SUMS.txt` dosyasındaki aynı adlı kayıtla karşılaştırın. `version_manifest.json` dosyası sürüm, URL, boyut ve doğrulanmış hash içerir.
 
-AppImage boyutu: 138.533.368 bayt. SHA-256:
+AppImage boyutu: 139.684.344 bayt. SHA-256:
 
 ```text
-ff9a9a64fe1f3112aee0d25fd1767f5f4fd32f7296c7f864115879a10544985b
+e15f182f3b9f05a1d59fb0e959e7bb46e616d77301cb54792a0dd0e7960ff9bd
 ```
 
-Doğrulama: masaüstü regresyonları 166/166, gerçek PostgreSQL/HTTP içeren sunucu suite 73/73, baseline Linux ortamında auth/updater/lifecycle 93/93 geçti. Paket içindeki ELF dosyalarının en yüksek GLIBC gereksinimi 2.30; standalone/AppImage GUI smoke ve metadata/zsync/ABI kapıları başarılı.
-
-## Sunucu dağıtımı hakkında
-
-Varsayılan adres `https://serpent-studio.onrender.com` olarak korunur. Bu masaüstü yayını canlı Render veritabanını taşımış veya yönetici parolasını döndürmüş değildir. Sunucu kaynaklarındaki güvenlik düzeltmeleri ayrı dağıtım gerektirir; uzak parola değiştirme özelliği yeni sunucu endpoint'ine ihtiyaç duyar.
-
-Mevcut ücretsiz Render SQLite verilerinin kaybolmasını önlemek için bu sürüm ayrı release dalından yayımlanır; `main` otomatik dağıtımı tetiklenmez. Canlı backend geçişi, yedekleme/secret rotasyonu ve kalıcı harici veritabanı bağlantısı doğrulanana kadar bekletilir. Ücretli kaynak oluşturulmaz.
+Doğrulama: masaüstü ve preflight testleri 195/195 PASS, CI testleri 20/20 PASS. Paket içindeki ELF dosyalarının en yüksek GLIBC gereksinimi 2.30; standalone/AppImage GUI smoke ve metadata/zsync/ABI kapıları başarılı.
