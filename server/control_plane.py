@@ -990,16 +990,23 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
       background-color: var(--bg-deep);
       background-image:
         radial-gradient(ellipse 90% 45% at 50% -5%, rgba(16, 185, 129, 0.06), transparent 70%),
-        radial-gradient(ellipse 60% 35% at 95% 100%, rgba(2, 132, 199, 0.04), transparent 60%),
-        url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1400' height='900' viewBox='0 0 1400 900'%3E%3Cg fill='none' stroke='rgba(52,211,153,0.035)' stroke-width='1'%3E%3Cpath d='M-100,50 Q200,120 500,70 T1100,100 T1500,60'/%3E%3Cpath d='M-100,120 Q220,180 520,130 T1120,170 T1500,120'/%3E%3Cpath d='M-100,190 Q240,250 540,190 T1140,230 T1500,190'/%3E%3Cpath d='M-100,270 Q250,330 570,260 T1150,300 T1500,260' stroke='rgba(52,211,153,0.065)' stroke-width='1.4'/%3E%3Cpath d='M-100,360 Q260,420 600,330 T1160,380 T1500,340'/%3E%3Cpath d='M-100,460 Q270,520 620,410 T1170,470 T1500,430'/%3E%3Cpath d='M-100,570 Q280,630 650,500 T1180,570 T1500,530' stroke='rgba(52,211,153,0.065)' stroke-width='1.4'/%3E%3Cpath d='M-100,690 Q290,750 680,600 T1190,680 T1500,640'/%3E%3Cpath d='M-100,820 Q300,880 720,710 T1200,800 T1500,760'/%3E%3C/g%3E%3Cg fill='none' stroke='rgba(52,211,153,0.04)' stroke-width='1'%3E%3Cpath d='M900,150 C960,110 1060,120 1100,170 C1140,220 1080,290 1020,290 C960,290 910,240 890,200 Z'/%3E%3Cpath d='M930,165 C975,130 1045,140 1075,180 C1105,220 1060,270 1015,270 C970,270 935,230 920,200 Z'/%3E%3Cpath d='M960,180 C990,155 1030,160 1050,190 C1070,220 1040,250 1010,250 C980,250 960,220 950,200 Z' stroke='rgba(52,211,153,0.07)' stroke-width='1.3'/%3E%3Cpath d='M985,195 C1005,180 1025,185 1035,200 C1045,215 1030,235 1010,235 C995,235 985,215 980,205 Z'/%3E%3Ccircle cx='1008' cy='208' r='2' fill='rgba(52,211,153,0.25)' stroke='none'/%3E%3C/g%3E%3Cg fill='none' stroke='rgba(52,211,153,0.04)' stroke-width='1'%3E%3Cpath d='M120,620 C180,590 280,610 310,660 C340,710 290,770 230,770 C170,770 120,720 105,670 Z'/%3E%3Cpath d='M150,635 C195,610 265,625 285,665 C305,705 270,750 225,750 C180,750 145,710 135,675 Z'/%3E%3Cpath d='M180,650 C210,630 250,640 265,670 C280,700 250,730 220,730 C190,730 170,700 165,680 Z' stroke='rgba(52,211,153,0.07)' stroke-width='1.3'/%3E%3Ccircle cx='222' cy='685' r='2' fill='rgba(52,211,153,0.25)' stroke='none'/%3E%3C/g%3E%3C/svg%3E");
+        radial-gradient(ellipse 60% 35% at 95% 100%, rgba(2, 132, 199, 0.04), transparent 60%);
       background-attachment: fixed;
-      background-size: 100% 100%, 100% 100%, 1400px 900px;
       color: var(--text-main);
       padding: 24px 20px 48px;
       min-height: 100vh;
       -webkit-font-smoothing: antialiased;
     }
-    .container { max-width: 1320px; margin: 0 auto; }
+    #topoCanvas {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      z-index: 0;
+      pointer-events: none;
+    }
+    .container { max-width: 1320px; margin: 0 auto; position: relative; z-index: 1; }
     
     /* HEADER: Observatory & Command Bar */
     header {
@@ -1575,6 +1582,7 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
   </style>
 </head>
 <body>
+  <canvas id="topoCanvas"></canvas>
   <div class="container">
     <header>
       <div class="brand-wrap">
@@ -2341,6 +2349,106 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
       loadScripts();
     }
 
+    function initTopoAnimation() {
+      const canvas = document.getElementById('topoCanvas');
+      if (!canvas || !canvas.getContext) return;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+
+      let width = 0, height = 0;
+      function resize() {
+        if (typeof window === 'undefined') return;
+        width = canvas.width = window.innerWidth || 1400;
+        height = canvas.height = window.innerHeight || 900;
+      }
+      if (typeof window !== 'undefined') {
+        window.addEventListener('resize', resize);
+      }
+      resize();
+
+      const reducedMotion = (typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+      const N = 16;
+      const steps = 110;
+
+      function renderFrame(time) {
+        ctx.clearRect(0, 0, width, height);
+
+        const t = time || 0;
+        // Ultra-slow, serene geological undulation speeds
+        const t1 = t * 0.00010;
+        const t2 = t * 0.00007;
+        const t3 = t * 0.00012;
+
+        for (let i = 0; i < N; i++) {
+          const u = (i + 0.6) / (N + 0.8);
+          const isIndex = (i % 3 === 0);
+
+          ctx.beginPath();
+          ctx.lineWidth = isIndex ? 1.35 : 0.85;
+          ctx.strokeStyle = isIndex ? 'rgba(52, 211, 153, 0.08)' : 'rgba(52, 211, 153, 0.038)';
+
+          for (let s = 0; s <= steps; s++) {
+            const nx = s / steps;
+            const x = nx * width;
+
+            // Strictly bounded wave components: sum of |A_m * beta_m| <= 0.28 < 1.0
+            // Guarantees du/dy > 0 strictly across all x and t (zero intersections mathematically)
+            const w1 = 0.048 * Math.sin(nx * 3.4 + t1 + u * 1.6);
+            const w2 = 0.034 * Math.sin(nx * 5.8 - t2 + u * 2.2 + 0.8);
+            const w3 = 0.022 * Math.cos(nx * 2.2 + t3 - u * 1.4 + 1.8);
+            const ridge = 0.040 * Math.sin(nx * Math.PI) * (1.0 - Math.pow(2 * u - 1, 2)) * Math.sin(t1 * 0.75 + nx * 1.8);
+
+            const delta = w1 + w2 + w3 + ridge;
+            const y = height * (u + delta);
+
+            if (s === 0) ctx.moveTo(x, y);
+            else ctx.lineTo(x, y);
+          }
+          ctx.stroke();
+        }
+
+        // Top-right natural peak summit (concentric elevation rings, strictly non-intersecting)
+        const sx = width * 0.82;
+        const sy = height * 0.22;
+        const summitLevels = [18, 38, 64, 96, 134];
+        for (let k = 0; k < summitLevels.length; k++) {
+          const R = summitLevels[k];
+          const isIndex = (k % 2 === 0);
+          ctx.beginPath();
+          ctx.lineWidth = isIndex ? 1.3 : 0.8;
+          ctx.strokeStyle = isIndex ? 'rgba(52, 211, 153, 0.09)' : 'rgba(52, 211, 153, 0.045)';
+
+          const ringSteps = 60;
+          for (let s = 0; s <= ringSteps; s++) {
+            const theta = (s / ringSteps) * Math.PI * 2;
+            const warp = 1.0 + 0.10 * Math.sin(2 * theta + t1 * 1.2) + 0.06 * Math.cos(3 * theta - t2 * 0.9 + 1.0);
+            const r = R * warp;
+            const px = sx + r * Math.cos(theta);
+            const py = sy + r * Math.sin(theta) * 0.85;
+            if (s === 0) ctx.moveTo(px, py);
+            else ctx.lineTo(px, py);
+          }
+          ctx.closePath();
+          ctx.stroke();
+        }
+
+        // Spot elevation peak dot
+        ctx.beginPath();
+        ctx.arc(sx, sy, 2, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(52, 211, 153, 0.35)';
+        ctx.fill();
+
+        if (!reducedMotion && typeof requestAnimationFrame === 'function') {
+          requestAnimationFrame(renderFrame);
+        }
+      }
+
+      if (typeof requestAnimationFrame === 'function') {
+        requestAnimationFrame(renderFrame);
+      }
+    }
+
+    initTopoAnimation();
     checkAuth();
   </script>
 </body>
