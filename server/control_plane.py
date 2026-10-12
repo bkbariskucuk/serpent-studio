@@ -936,314 +936,516 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <style>
     :root {
-      --bg-base: #070B14;
-      --bg-surface: #0E1526;
-      --bg-surface-elevated: #151F36;
-      --bg-card: rgba(14, 21, 38, 0.85);
-      --border: rgba(56, 189, 248, 0.15);
-      --border-hover: rgba(56, 189, 248, 0.45);
-      --text: #F8FAFC;
-      --text-muted: #94A3B8;
-      --text-dim: #64748B;
-      --accent: #38BDF8;
-      --accent-hover: #0284C7;
-      --accent-glow: rgba(56, 189, 248, 0.25);
-      --danger: #F43F5E;
-      --danger-hover: #E11D48;
-      --success: #10B981;
-      --warning: #F59E0B;
-      --purple: #8B5CF6;
+      /* Geological Mineral Base */
+      --bg-deep: #0B0F14;
+      --bg-base: #10161E;
+      --bg-surface: #151D26;
+      --bg-surface-elevated: #1B2531;
+      --bg-surface-card: rgba(21, 29, 38, 0.88);
+      --bg-input: #0D131A;
+      
+      /* Subtle Stone & Shale Borders */
+      --border-stone-faint: rgba(255, 255, 255, 0.06);
+      --border-stone: #233140;
+      --border-stone-hover: #334456;
+      
+      /* Typography & Clarity */
+      --text-main: #F1F5F9;
+      --text-soft: #CBD5E1;
+      --text-muted: #8494A5;
+      --text-dim: #536475;
+      
+      /* Alpine Pine & Forest Sage (Life, Primary Health, Actions) */
+      --pine: #10B981;
+      --pine-deep: #059669;
+      --pine-light: #34D399;
+      --pine-subtle: rgba(16, 185, 129, 0.12);
+      --pine-border: rgba(16, 185, 129, 0.3);
+      
+      /* Glacial Stream / Alpine Lake (Telemetry, Badges) */
+      --stream: #0284C7;
+      --stream-light: #38BDF8;
+      --stream-subtle: rgba(56, 189, 248, 0.12);
+      --stream-border: rgba(56, 189, 248, 0.3);
+      
+      /* Ochre / Raw Honeycomb (Warnings, Restricted) */
+      --ochre: #D97706;
+      --ochre-light: #F59E0B;
+      --ochre-subtle: rgba(245, 158, 11, 0.12);
+      --ochre-border: rgba(245, 158, 11, 0.3);
+      
+      /* Terracotta / Rowan Berry (Exceptions, Danger) */
+      --terracotta: #E11D48;
+      --terracotta-dark: #BE123C;
+      --terracotta-subtle: rgba(225, 29, 72, 0.12);
+      --terracotta-border: rgba(225, 29, 72, 0.3);
+      
+      /* Ambient Natural Shadow */
+      --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.25);
+      --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.35);
+      --shadow-lg: 0 16px 40px rgba(0, 0, 0, 0.5);
     }
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Inter", sans-serif; }
     body {
-      background: var(--bg-base);
+      background-color: var(--bg-deep);
       background-image:
-        radial-gradient(circle at 50% 0%, rgba(56, 189, 248, 0.08) 0%, transparent 50%),
-        radial-gradient(circle at 90% 100%, rgba(139, 92, 246, 0.05) 0%, transparent 40%);
-      color: var(--text);
-      padding: 24px;
+        radial-gradient(ellipse 90% 45% at 50% -5%, rgba(16, 185, 129, 0.06), transparent 70%),
+        radial-gradient(ellipse 60% 35% at 95% 100%, rgba(2, 132, 199, 0.04), transparent 60%),
+        url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1400' height='900' viewBox='0 0 1400 900'%3E%3Cg fill='none' stroke='rgba(52,211,153,0.035)' stroke-width='1'%3E%3Cpath d='M-100,50 Q200,120 500,70 T1100,100 T1500,60'/%3E%3Cpath d='M-100,120 Q220,180 520,130 T1120,170 T1500,120'/%3E%3Cpath d='M-100,190 Q240,250 540,190 T1140,230 T1500,190'/%3E%3Cpath d='M-100,270 Q250,330 570,260 T1150,300 T1500,260' stroke='rgba(52,211,153,0.065)' stroke-width='1.4'/%3E%3Cpath d='M-100,360 Q260,420 600,330 T1160,380 T1500,340'/%3E%3Cpath d='M-100,460 Q270,520 620,410 T1170,470 T1500,430'/%3E%3Cpath d='M-100,570 Q280,630 650,500 T1180,570 T1500,530' stroke='rgba(52,211,153,0.065)' stroke-width='1.4'/%3E%3Cpath d='M-100,690 Q290,750 680,600 T1190,680 T1500,640'/%3E%3Cpath d='M-100,820 Q300,880 720,710 T1200,800 T1500,760'/%3E%3C/g%3E%3Cg fill='none' stroke='rgba(52,211,153,0.04)' stroke-width='1'%3E%3Cpath d='M900,150 C960,110 1060,120 1100,170 C1140,220 1080,290 1020,290 C960,290 910,240 890,200 Z'/%3E%3Cpath d='M930,165 C975,130 1045,140 1075,180 C1105,220 1060,270 1015,270 C970,270 935,230 920,200 Z'/%3E%3Cpath d='M960,180 C990,155 1030,160 1050,190 C1070,220 1040,250 1010,250 C980,250 960,220 950,200 Z' stroke='rgba(52,211,153,0.07)' stroke-width='1.3'/%3E%3Cpath d='M985,195 C1005,180 1025,185 1035,200 C1045,215 1030,235 1010,235 C995,235 985,215 980,205 Z'/%3E%3Ccircle cx='1008' cy='208' r='2' fill='rgba(52,211,153,0.25)' stroke='none'/%3E%3C/g%3E%3Cg fill='none' stroke='rgba(52,211,153,0.04)' stroke-width='1'%3E%3Cpath d='M120,620 C180,590 280,610 310,660 C340,710 290,770 230,770 C170,770 120,720 105,670 Z'/%3E%3Cpath d='M150,635 C195,610 265,625 285,665 C305,705 270,750 225,750 C180,750 145,710 135,675 Z'/%3E%3Cpath d='M180,650 C210,630 250,640 265,670 C280,700 250,730 220,730 C190,730 170,700 165,680 Z' stroke='rgba(52,211,153,0.07)' stroke-width='1.3'/%3E%3Ccircle cx='222' cy='685' r='2' fill='rgba(52,211,153,0.25)' stroke='none'/%3E%3C/g%3E%3C/svg%3E");
+      background-attachment: fixed;
+      background-size: 100% 100%, 100% 100%, 1400px 900px;
+      color: var(--text-main);
+      padding: 24px 20px 48px;
       min-height: 100vh;
       -webkit-font-smoothing: antialiased;
     }
-    .container { max-width: 1280px; margin: 0 auto; }
+    .container { max-width: 1320px; margin: 0 auto; }
     
-    /* HEADER */
+    /* HEADER: Observatory & Command Bar */
     header {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      padding: 16px 20px;
-      background: var(--bg-card);
+      padding: 16px 24px;
+      background: var(--bg-surface-card);
       backdrop-filter: blur(12px);
-      border: 1px solid var(--border);
+      border: 1px solid var(--border-stone);
       border-radius: 14px;
-      margin-bottom: 20px;
-      box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+      margin-bottom: 22px;
+      box-shadow: var(--shadow-md);
+      position: relative;
+      overflow: hidden;
+    }
+    header::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0; height: 1px;
+      background: linear-gradient(90deg, transparent, rgba(52, 211, 153, 0.4), rgba(56, 189, 248, 0.3), transparent);
     }
     .brand-wrap { display: flex; align-items: center; gap: 14px; }
     .brand-icon {
-      font-size: 26px;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
       width: 44px;
       height: 44px;
-      background: rgba(56, 189, 248, 0.12);
-      border: 1px solid rgba(56, 189, 248, 0.3);
       border-radius: 12px;
-      box-shadow: 0 0 16px var(--accent-glow);
+      background: linear-gradient(135deg, rgba(16, 185, 129, 0.14), rgba(2, 132, 199, 0.1));
+      border: 1px solid var(--border-stone-hover);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1);
+      flex-shrink: 0;
     }
     h1 {
-      font-size: 20px;
+      font-size: 19px;
       font-weight: 700;
       color: #fff;
       display: flex;
       align-items: center;
       gap: 10px;
-      letter-spacing: -0.3px;
+      letter-spacing: -0.2px;
     }
     .badge {
       font-size: 11px;
       padding: 3px 10px;
       border-radius: 99px;
-      background: rgba(56, 189, 248, 0.15);
-      color: var(--accent);
-      border: 1px solid rgba(56, 189, 248, 0.35);
+      background: var(--stream-subtle);
+      color: var(--stream-light);
+      border: 1px solid var(--stream-border);
       font-weight: 600;
-      letter-spacing: 0.2px;
+      letter-spacing: 0.3px;
     }
     .status-pill {
-      font-size: 11px;
+      font-size: 11.5px;
       padding: 3px 10px;
       border-radius: 99px;
-      background: rgba(16, 185, 129, 0.12);
-      color: var(--success);
-      border: 1px solid rgba(16, 185, 129, 0.3);
+      background: var(--pine-subtle);
+      color: var(--pine-light);
+      border: 1px solid var(--pine-border);
       display: inline-flex;
       align-items: center;
-      gap: 5px;
-      font-weight: 600;
+      gap: 6px;
+      font-weight: 500;
     }
     .pulse-dot {
       width: 7px;
       height: 7px;
       border-radius: 50%;
-      background: var(--success);
-      box-shadow: 0 0 8px var(--success);
-      animation: pulse 2s infinite;
+      background: var(--pine-light);
+      box-shadow: 0 0 8px var(--pine-light);
+      animation: pulse 2.5s infinite;
     }
-    @keyframes pulse { 0% { opacity: 1; transform: scale(1); } 50% { opacity: 0.4; transform: scale(0.85); } 100% { opacity: 1; transform: scale(1); } }
+    @keyframes pulse {
+      0% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.35; transform: scale(0.85); }
+      100% { opacity: 1; transform: scale(1); }
+    }
     
-    .auth-actions { display: flex; align-items: center; gap: 12px; }
+    .auth-actions { display: flex; align-items: center; gap: 10px; }
     .user-chip {
       display: flex;
       align-items: center;
       gap: 8px;
-      background: rgba(255, 255, 255, 0.05);
-      padding: 6px 12px;
+      background: var(--bg-surface-elevated);
+      padding: 6px 13px;
       border-radius: 8px;
-      border: 1px solid rgba(255, 255, 255, 0.08);
+      border: 1px solid var(--border-stone);
       font-size: 13px;
-      font-weight: 600;
-      color: var(--accent);
+      font-weight: 500;
+      color: var(--pine-light);
     }
     
-    /* STATS OVERVIEW CARDS */
+    /* STATS OVERVIEW CARDS: Geological Specimen Boxes */
     .stats-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
       gap: 16px;
       margin-bottom: 24px;
     }
     .stat-card {
-      background: var(--bg-card);
+      background: var(--bg-surface-card);
       backdrop-filter: blur(12px);
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 18px 20px;
+      border: 1px solid var(--border-stone);
+      border-radius: 14px;
+      padding: 20px 22px;
       display: flex;
       justify-content: space-between;
       align-items: center;
       transition: all 0.25s ease;
-      box-shadow: 0 4px 16px rgba(0,0,0,0.25);
+      box-shadow: var(--shadow-sm);
+      position: relative;
+      overflow: hidden;
     }
     .stat-card:hover {
-      border-color: var(--border-hover);
+      border-color: var(--border-stone-hover);
       transform: translateY(-2px);
-      box-shadow: 0 8px 24px rgba(0,0,0,0.35);
+      box-shadow: var(--shadow-md);
     }
-    .stat-info h4 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.6px; color: var(--text-muted); margin-bottom: 6px; }
-    .stat-number { font-size: 26px; font-weight: 700; color: #fff; letter-spacing: -0.5px; }
-    .stat-sub { font-size: 11px; color: var(--text-dim); margin-top: 4px; }
+    .stat-card::after {
+      content: '';
+      position: absolute;
+      bottom: 0; left: 0; right: 0; height: 2px;
+      background: transparent;
+      transition: background 0.25s ease;
+    }
+    .stat-card.card-pine:hover::after { background: var(--pine); }
+    .stat-card.card-ochre:hover::after { background: var(--ochre-light); }
+    .stat-card.card-terracotta:hover::after { background: var(--terracotta); }
+    .stat-card.card-glacial:hover::after { background: var(--stream-light); }
+    
+    .stat-info h4 {
+      font-size: 11.5px;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: var(--text-muted);
+      margin-bottom: 6px;
+      font-weight: 600;
+    }
+    .stat-number {
+      font-size: 28px;
+      font-weight: 700;
+      color: #fff;
+      letter-spacing: -0.5px;
+      line-height: 1.1;
+    }
+    .stat-sub {
+      font-size: 11.5px;
+      color: var(--text-dim);
+      margin-top: 6px;
+      font-weight: 400;
+    }
     .stat-icon {
       width: 44px;
       height: 44px;
-      border-radius: 10px;
+      border-radius: 12px;
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 20px;
-      background: rgba(56, 189, 248, 0.1);
-      color: var(--accent);
+      flex-shrink: 0;
+      border: 1px solid transparent;
+    }
+    .stat-icon-pine {
+      background: var(--pine-subtle);
+      color: var(--pine-light);
+      border-color: var(--pine-border);
+    }
+    .stat-icon-ochre {
+      background: var(--ochre-subtle);
+      color: var(--ochre-light);
+      border-color: var(--ochre-border);
+    }
+    .stat-icon-terracotta {
+      background: var(--terracotta-subtle);
+      color: var(--terracotta);
+      border-color: var(--terracotta-border);
+    }
+    .stat-icon-glacial {
+      background: var(--stream-subtle);
+      color: var(--stream-light);
+      border-color: var(--stream-border);
     }
     
-    /* TABS */
-    .tabs { display: flex; gap: 8px; margin-bottom: 20px; border-bottom: 1px solid rgba(255, 255, 255, 0.08); padding-bottom: 12px; }
+    /* TABS: Field Log Indices */
+    .tabs {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 22px;
+      border-bottom: 1px solid var(--border-stone);
+      padding-bottom: 12px;
+    }
     .tab-btn {
       background: var(--bg-surface);
-      border: 1px solid rgba(255, 255, 255, 0.08);
+      border: 1px solid var(--border-stone);
       color: var(--text-muted);
       padding: 10px 18px;
-      border-radius: 8px;
+      border-radius: 9px;
       cursor: pointer;
-      font-weight: 600;
+      font-weight: 500;
       font-size: 13px;
-      transition: all 0.2s;
+      transition: all 0.2s ease;
       display: flex;
       align-items: center;
       gap: 8px;
+      user-select: none;
     }
-    .tab-btn:hover { color: #fff; border-color: rgba(255, 255, 255, 0.2); }
+    .tab-btn:hover {
+      color: var(--text-main);
+      border-color: var(--border-stone-hover);
+      background: var(--bg-surface-elevated);
+    }
     .tab-btn.active {
-      background: rgba(56, 189, 248, 0.15);
-      color: var(--accent);
-      border-color: var(--accent);
-      box-shadow: 0 0 12px rgba(56, 189, 248, 0.2);
+      background: var(--pine-subtle);
+      color: var(--pine-light);
+      border-color: var(--pine-border);
+      font-weight: 600;
     }
     .tab-badge {
-      font-size: 10px;
-      padding: 1px 6px;
+      font-size: 11px;
+      padding: 1px 7px;
       border-radius: 99px;
-      background: rgba(255, 255, 255, 0.1);
-      color: #fff;
+      background: rgba(255, 255, 255, 0.08);
+      color: var(--text-soft);
+      font-weight: 600;
+      transition: all 0.2s;
     }
-    .tab-btn.active .tab-badge { background: var(--accent); color: #000; font-weight: 700; }
+    .tab-btn.active .tab-badge {
+      background: var(--pine);
+      color: #071710;
+      font-weight: 700;
+    }
     
-    /* CARDS */
+    /* CARDS: Granite Tablet */
     .card {
-      background: var(--bg-card);
+      background: var(--bg-surface-card);
       backdrop-filter: blur(12px);
-      border: 1px solid var(--border);
+      border: 1px solid var(--border-stone);
       border-radius: 14px;
-      padding: 22px;
+      padding: 24px;
       margin-bottom: 24px;
-      box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+      box-shadow: var(--shadow-sm);
     }
     .card-header {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      margin-bottom: 16px;
+      margin-bottom: 18px;
       flex-wrap: wrap;
       gap: 12px;
     }
-    .card-title { font-size: 16px; font-weight: 700; color: #fff; display: flex; align-items: center; gap: 8px; }
-    .card-subtitle { font-size: 12px; color: var(--text-muted); margin-top: 3px; }
+    .card-title {
+      font-size: 16px;
+      font-weight: 600;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      letter-spacing: -0.2px;
+    }
+    .card-subtitle {
+      font-size: 12.5px;
+      color: var(--text-muted);
+      margin-top: 4px;
+      line-height: 1.4;
+    }
     
     /* SEARCH & FILTER CONTROLS */
     .search-input-wrap {
       position: relative;
       display: flex;
       align-items: center;
-      min-width: 260px;
+      min-width: 270px;
     }
     .search-input {
       width: 100%;
-      background: rgba(15, 23, 42, 0.7);
-      border: 1px solid rgba(255, 255, 255, 0.12);
-      color: #fff;
-      padding: 8px 14px;
+      background: var(--bg-input);
+      border: 1px solid var(--border-stone);
+      color: var(--text-main);
+      padding: 8px 14px 8px 34px;
       border-radius: 8px;
       font-size: 13px;
       outline: none;
-      transition: all 0.2s;
+      transition: all 0.2s ease;
     }
-    .search-input:focus { border-color: var(--accent); box-shadow: 0 0 10px rgba(56, 189, 248, 0.2); }
+    .search-input:focus {
+      border-color: var(--pine);
+      box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.18);
+    }
+    .search-icon-svg {
+      position: absolute;
+      left: 11px;
+      pointer-events: none;
+      color: var(--text-dim);
+    }
     
-    /* FORM STYLES */
+    /* FORMS & INPUTS: Deep Mineral Fields */
     .form-row { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 14px; align-items: center; }
     input, select {
-      background: var(--bg-surface);
-      border: 1px solid rgba(255, 255, 255, 0.12);
-      color: #fff;
+      background: var(--bg-input);
+      border: 1px solid var(--border-stone);
+      color: var(--text-main);
       padding: 10px 14px;
-      border-radius: 8px;
+      border-radius: 9px;
       font-size: 13px;
       outline: none;
-      transition: all 0.2s;
+      transition: all 0.2s ease;
     }
+    input::placeholder { color: var(--text-dim); }
     input:focus, select:focus {
-      border-color: var(--accent);
-      box-shadow: 0 0 12px rgba(56, 189, 248, 0.25);
+      border-color: var(--pine);
+      box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.18);
     }
     
-    /* BUTTONS */
+    /* BUTTONS: Tactile Natural Controls */
     button.btn {
-      background: var(--accent);
-      color: #000;
+      background: linear-gradient(135deg, var(--pine-deep), var(--pine));
+      color: #051910;
       border: none;
       padding: 9px 16px;
-      border-radius: 8px;
+      border-radius: 9px;
       font-weight: 600;
       font-size: 13px;
       cursor: pointer;
-      transition: all 0.2s;
+      transition: all 0.2s ease;
       display: inline-flex;
       align-items: center;
-      gap: 6px;
+      gap: 7px;
       user-select: none;
+      box-shadow: 0 2px 6px rgba(16, 185, 129, 0.25);
     }
-    button.btn:hover { background: var(--accent-hover); box-shadow: 0 4px 12px var(--accent-glow); transform: translateY(-1px); }
+    button.btn:hover {
+      background: linear-gradient(135deg, var(--pine), var(--pine-light));
+      box-shadow: 0 4px 12px rgba(16, 185, 129, 0.35);
+      transform: translateY(-1px);
+    }
     button.btn:active { transform: translateY(0); }
-    button.btn-danger { background: rgba(244, 63, 94, 0.15); color: var(--danger); border: 1px solid rgba(244, 63, 94, 0.35); }
-    button.btn-danger:hover { background: var(--danger); color: #fff; box-shadow: 0 4px 12px rgba(244, 63, 94, 0.4); }
-    button.btn-warning { background: rgba(245, 158, 11, 0.15); color: var(--warning); border: 1px solid rgba(245, 158, 11, 0.35); }
-    button.btn-warning:hover { background: var(--warning); color: #000; }
-    button.btn-secondary { background: rgba(255, 255, 255, 0.08); color: var(--text); border: 1px solid rgba(255, 255, 255, 0.12); }
-    button.btn-secondary:hover { background: rgba(255, 255, 255, 0.15); }
-    button.btn-sm { padding: 5px 10px; font-size: 12px; border-radius: 6px; }
     
-    /* PILLS */
+    button.btn-secondary {
+      background: var(--bg-surface-elevated);
+      color: var(--text-soft);
+      border: 1px solid var(--border-stone);
+      box-shadow: none;
+    }
+    button.btn-secondary:hover {
+      background: var(--bg-surface-elevated);
+      border-color: var(--border-stone-hover);
+      color: #fff;
+    }
+    
+    button.btn-danger {
+      background: var(--terracotta-subtle);
+      color: var(--terracotta);
+      border: 1px solid var(--terracotta-border);
+      box-shadow: none;
+    }
+    button.btn-danger:hover {
+      background: var(--terracotta);
+      color: #fff;
+      box-shadow: 0 4px 12px rgba(225, 29, 72, 0.35);
+    }
+    
+    button.btn-warning {
+      background: var(--ochre-subtle);
+      color: var(--ochre-light);
+      border: 1px solid var(--ochre-border);
+      box-shadow: none;
+    }
+    button.btn-warning:hover {
+      background: var(--ochre-light);
+      color: #1A1104;
+      box-shadow: 0 4px 12px rgba(245, 158, 11, 0.35);
+    }
+    
+    button.btn-success {
+      background: var(--pine-subtle);
+      color: var(--pine-light);
+      border: 1px solid var(--pine-border);
+      box-shadow: none;
+    }
+    button.btn-success:hover {
+      background: var(--pine);
+      color: #051910;
+    }
+    
+    button.btn-sm {
+      padding: 5px 11px;
+      font-size: 12px;
+      border-radius: 7px;
+    }
+    
+    /* SPECIMEN PILLS */
     .pill-btn {
       display: inline-flex;
       align-items: center;
       gap: 4px;
-      background: rgba(56, 189, 248, 0.08);
-      border: 1px solid rgba(56, 189, 248, 0.25);
-      color: var(--accent);
-      padding: 4px 10px;
+      background: var(--bg-surface-elevated);
+      border: 1px solid var(--border-stone);
+      color: var(--text-soft);
+      padding: 4px 11px;
       border-radius: 99px;
-      font-size: 11px;
-      font-weight: 600;
+      font-size: 11.5px;
+      font-weight: 500;
       cursor: pointer;
-      transition: all 0.15s;
+      transition: all 0.15s ease;
       user-select: none;
     }
-    .pill-btn:hover { background: var(--accent); color: #000; transform: translateY(-1px); }
+    .pill-btn:hover {
+      background: var(--pine-subtle);
+      border-color: var(--pine-border);
+      color: var(--pine-light);
+      transform: translateY(-1px);
+    }
     
-    /* TABLES */
-    .table-container { width: 100%; overflow-x: auto; border-radius: 10px; border: 1px solid rgba(255, 255, 255, 0.06); }
+    /* TABLES: Precision Geological Log */
+    .table-container {
+      width: 100%;
+      overflow-x: auto;
+      border-radius: 10px;
+      border: 1px solid var(--border-stone);
+      background: var(--bg-surface);
+    }
     table { width: 100%; border-collapse: collapse; text-align: left; }
-    thead tr { background: rgba(15, 23, 42, 0.7); }
+    thead tr {
+      background: var(--bg-surface-elevated);
+      border-bottom: 1px solid var(--border-stone);
+    }
     th {
-      padding: 12px 14px;
+      padding: 12px 16px;
       font-size: 11px;
-      font-weight: 700;
+      font-weight: 600;
       color: var(--text-muted);
       text-transform: uppercase;
-      letter-spacing: 0.6px;
-      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      letter-spacing: 0.7px;
     }
     tbody tr {
       transition: background 0.15s ease;
-      border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+      border-bottom: 1px solid var(--border-stone-faint);
     }
-    tbody tr:hover { background: rgba(56, 189, 248, 0.04); }
+    tbody tr:last-child { border-bottom: none; }
+    tbody tr:hover { background: rgba(16, 185, 129, 0.035); }
     td {
-      padding: 13px 14px;
+      padding: 13px 16px;
       font-size: 13px;
       vertical-align: middle;
-      color: #E2E8F0;
+      color: var(--text-soft);
     }
     
     /* BADGES */
@@ -1253,47 +1455,25 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
       gap: 5px;
       cursor: pointer;
       transition: all 0.2s;
-      background: rgba(139, 92, 246, 0.12);
-      color: #C084FC;
-      padding: 3px 9px;
+      background: var(--stream-subtle);
+      color: var(--stream-light);
+      padding: 3px 10px;
       border-radius: 6px;
       font-size: 12px;
-      font-weight: 600;
-      border: 1px solid rgba(139, 92, 246, 0.3);
+      font-weight: 500;
+      border: 1px solid var(--stream-border);
     }
-    .role-badge:hover { background: rgba(139, 92, 246, 0.25); border-color: var(--purple); }
-    
-    .restriction-pill {
-      font-size: 11px;
-      padding: 3px 9px;
-      border-radius: 99px;
-      background: rgba(244, 63, 94, 0.12);
-      color: var(--danger);
-      border: 1px solid rgba(244, 63, 94, 0.35);
-      font-weight: 600;
-      display: inline-flex;
-      align-items: center;
-      gap: 4px;
-    }
-    .ok-pill {
-      font-size: 11px;
-      padding: 3px 9px;
-      border-radius: 99px;
-      background: rgba(16, 185, 129, 0.12);
-      color: var(--success);
-      border: 1px solid rgba(16, 185, 129, 0.35);
-      font-weight: 600;
-      display: inline-flex;
-      align-items: center;
-      gap: 4px;
+    .role-badge:hover {
+      background: rgba(56, 189, 248, 0.22);
+      border-color: var(--stream-light);
     }
     
-    /* MODALS */
+    /* MODALS: Basalt Monolith Dialogs */
     .modal {
       display: none;
       position: fixed;
       inset: 0;
-      background: rgba(3, 7, 18, 0.85);
+      background: rgba(5, 8, 12, 0.82);
       backdrop-filter: blur(8px);
       justify-content: center;
       align-items: center;
@@ -1302,17 +1482,21 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
     }
     .modal-content {
       background: var(--bg-surface);
-      border: 1px solid var(--border-hover);
+      border: 1px solid var(--border-stone-hover);
       padding: 26px;
       border-radius: 16px;
       max-width: 820px;
       width: 100%;
       max-height: 88vh;
       overflow-y: auto;
-      box-shadow: 0 20px 50px rgba(0,0,0,0.6);
+      box-shadow: var(--shadow-lg);
       animation: modalFadeIn 0.2s ease-out;
+      position: relative;
     }
-    @keyframes modalFadeIn { from { opacity: 0; transform: scale(0.97); } to { opacity: 1; transform: scale(1); } }
+    @keyframes modalFadeIn {
+      from { opacity: 0; transform: scale(0.98); }
+      to { opacity: 1; transform: scale(1); }
+    }
     
     .panel-grid {
       display: grid;
@@ -1321,47 +1505,50 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
       margin: 16px 0;
     }
     .panel-card {
-      background: rgba(255, 255, 255, 0.03);
-      border: 1px solid rgba(255, 255, 255, 0.08);
+      background: var(--bg-surface-elevated);
+      border: 1px solid var(--border-stone);
       border-radius: 10px;
       padding: 12px 14px;
       display: flex;
       align-items: flex-start;
       gap: 10px;
       cursor: pointer;
-      transition: all 0.2s;
+      transition: all 0.2s ease;
       user-select: none;
     }
-    .panel-card:hover { border-color: var(--accent); background: rgba(56, 189, 248, 0.04); }
+    .panel-card:hover {
+      border-color: var(--pine);
+      background: rgba(16, 185, 129, 0.04);
+    }
     .panel-card.active-restricted {
-      background: rgba(244, 63, 94, 0.12);
-      border-color: rgba(244, 63, 94, 0.5);
+      background: var(--terracotta-subtle);
+      border-color: var(--terracotta-border);
     }
     .panel-card input[type="checkbox"] {
       margin-top: 3px;
       cursor: pointer;
-      accent-color: var(--danger);
+      accent-color: var(--terracotta);
       width: 16px;
       height: 16px;
     }
-    .panel-title { font-size: 13px; font-weight: 600; color: #F8FAFC; display: flex; align-items: center; gap: 6px; }
-    .panel-desc { font-size: 11px; color: var(--text-muted); margin-top: 4px; line-height: 1.35; }
+    .panel-title { font-size: 13px; font-weight: 600; color: var(--text-main); display: flex; align-items: center; gap: 6px; }
+    .panel-desc { font-size: 11.5px; color: var(--text-muted); margin-top: 4px; line-height: 1.35; }
     
     pre {
-      background: #030712;
-      padding: 14px;
-      border: 1px solid rgba(255, 255, 255, 0.08);
+      background: var(--bg-deep);
+      padding: 16px;
+      border: 1px solid var(--border-stone);
       border-radius: 10px;
-      color: #E2E8F0;
+      color: var(--text-soft);
       font-size: 12px;
-      line-height: 1.5;
+      line-height: 1.55;
       overflow-x: auto;
       white-space: pre-wrap;
-      max-height: 420px;
+      max-height: 440px;
       font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
     }
     
-    /* TOAST */
+    /* TOAST: Natural Stone Notification */
     #toastContainer {
       position: fixed;
       bottom: 24px;
@@ -1373,12 +1560,12 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
     }
     .toast {
       background: var(--bg-surface-elevated);
-      color: #fff;
-      border: 1px solid var(--border);
+      color: var(--text-main);
+      border: 1px solid var(--border-stone-hover);
       padding: 12px 18px;
       border-radius: 10px;
       font-size: 13px;
-      box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+      box-shadow: var(--shadow-lg);
       display: flex;
       align-items: center;
       gap: 10px;
@@ -1391,7 +1578,14 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
   <div class="container">
     <header>
       <div class="brand-wrap">
-        <div class="brand-icon">⚛️</div>
+        <div class="brand-icon" title="Serpent Studio Topografik Çekirdek">
+          <svg width="26" height="26" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <ellipse cx="14" cy="14" rx="12" ry="6" stroke="#34D399" stroke-width="1.3" transform="rotate(-25 14 14)" stroke-dasharray="2 1"/>
+            <ellipse cx="14" cy="14" rx="12" ry="6" stroke="#38BDF8" stroke-width="1.3" transform="rotate(25 14 14)"/>
+            <circle cx="14" cy="14" r="3.2" fill="#10B981"/>
+            <circle cx="14" cy="14" r="6" stroke="rgba(52, 211, 153, 0.35)" stroke-width="1"/>
+          </svg>
+        </div>
         <div>
           <h1>Serpent Studio <span class="badge">Yönetim ve Telemetri</span></h1>
           <div style="margin-top: 4px; display: flex; align-items: center; gap: 8px;">
@@ -1400,60 +1594,78 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
         </div>
       </div>
       <div class="auth-actions">
-        <button class="btn btn-secondary btn-sm" onclick="loadAll()" title="Tüm verileri anlık yenile">🔄 Yenile</button>
+        <button class="btn btn-secondary btn-sm" onclick="loadAll()" title="Tüm verileri anlık yenile">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+          Yenile
+        </button>
         <div class="user-chip" id="adminChip">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
           <span id="adminName">Giriş Yapılmadı</span>
         </div>
-        <button class="btn btn-danger btn-sm" onclick="logoutAdmin()">Çıkış Yap</button>
+        <button class="btn btn-danger btn-sm" onclick="logoutAdmin()">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg>
+          Çıkış Yap
+        </button>
       </div>
     </header>
 
     <!-- METRICS OVERVIEW -->
     <div class="stats-grid">
-      <div class="stat-card">
+      <div class="stat-card card-pine">
         <div class="stat-info">
           <h4>Kullanıcılar & Testerlar</h4>
           <div class="stat-number" id="statUsersCount">0</div>
           <div class="stat-sub" id="statUsersSub">0 Aktif · 0 Askıda</div>
         </div>
-        <div class="stat-icon">👥</div>
+        <div class="stat-icon stat-icon-pine" title="Kullanıcı Havuzu">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        </div>
       </div>
-      <div class="stat-card">
+      <div class="stat-card card-ochre">
         <div class="stat-info">
           <h4>Kısıtlamalı Hesaplar</h4>
-          <div class="stat-number" id="statRestrictedCount" style="color: var(--warning);">0</div>
+          <div class="stat-number" id="statRestrictedCount" style="color: var(--ochre-light);">0</div>
           <div class="stat-sub">Panel sınırlandırması olanlar</div>
         </div>
-        <div class="stat-icon" style="background: rgba(245, 158, 11, 0.1); color: var(--warning);">🛡️</div>
+        <div class="stat-icon stat-icon-ochre" title="Kısıtlı Hesaplar">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+        </div>
       </div>
-      <div class="stat-card">
+      <div class="stat-card card-terracotta">
         <div class="stat-info">
           <h4>Hata & Çökme Raporları</h4>
-          <div class="stat-number" id="statErrorsCount" style="color: var(--danger);">0</div>
+          <div class="stat-number" id="statErrorsCount" style="color: var(--terracotta);">0</div>
           <div class="stat-sub">Tester exception bildirimleri</div>
         </div>
-        <div class="stat-icon" style="background: rgba(244, 63, 94, 0.1); color: var(--danger);">🚨</div>
+        <div class="stat-icon stat-icon-terracotta" title="Telemetri İstisnaları">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+        </div>
       </div>
-      <div class="stat-card">
+      <div class="stat-card card-glacial">
         <div class="stat-info">
           <h4>Serpent Betikleri</h4>
-          <div class="stat-number" id="statScriptsCount" style="color: var(--purple);">0</div>
-          <div class="stat-sub">Paylaşılan simülasyon girdileri</div>
+          <div class="stat-number" id="statScriptsCount" style="color: var(--stream-light);">0</div>
+          <div class="stat-sub">Paylaşılan simülasyon modelleri</div>
         </div>
-        <div class="stat-icon" style="background: rgba(139, 92, 246, 0.1); color: var(--purple);">📜</div>
+        <div class="stat-icon stat-icon-glacial" title="Kayıtlı Serpent Girdileri">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+        </div>
       </div>
     </div>
 
     <!-- TABS NAVIGATION -->
     <div class="tabs">
       <button class="tab-btn active" onclick="switchTab('users', event)">
-        👥 Kullanıcı Yönetimi & Testerlar <span class="tab-badge" id="badgeUsers">0</span>
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        Kullanıcı Yönetimi & Testerlar <span class="tab-badge" id="badgeUsers">0</span>
       </button>
       <button class="tab-btn" onclick="switchTab('errors', event)">
-        🚨 Tester Hata & Çökme Raporları <span class="tab-badge" id="badgeErrors">0</span>
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+        Tester Hata & Çökme Raporları <span class="tab-badge" id="badgeErrors">0</span>
       </button>
       <button class="tab-btn" onclick="switchTab('scripts', event)">
-        📜 Çalıştırılan Serpent Betikleri <span class="tab-badge" id="badgeScripts">0</span>
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+        Çalıştırılan Serpent Betikleri <span class="tab-badge" id="badgeScripts">0</span>
       </button>
     </div>
 
@@ -1462,8 +1674,11 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
       <div class="card">
         <div class="card-header">
           <div>
-            <div class="card-title">➕ Yeni Tester / Kullanıcı Oluştur</div>
-            <div class="card-subtitle">Buradan belirleyeceğiniz hesap ve şifre masaüstü uygulamasında anında geçerli olur (Uygulama güncellemesi gerektirmez).</div>
+            <div class="card-title">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              Yeni Tester / Kullanıcı Oluştur
+            </div>
+            <div class="card-subtitle">Belirleyeceğiniz hesap ve şifre masaüstü uygulamasında anında geçerli olur (uygulama güncellemesi gerektirmez).</div>
           </div>
         </div>
         
@@ -1472,11 +1687,14 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
           <input type="password" id="newPassword" placeholder="İlk Şifre (en az 6 karakter)" style="flex:1; min-width: 160px;">
           <input type="text" id="newDisplayName" placeholder="İsim (örn: Ali Mühendis)" style="flex:1; min-width: 160px;">
           <input type="text" id="newRole" placeholder="Rol / Keyword (örn: tester)" value="tester" style="flex:1; min-width: 150px;">
-          <button class="btn" onclick="createUser()">💾 Kullanıcıyı Kaydet</button>
+          <button class="btn" onclick="createUser()">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+            Kullanıcıyı Kaydet
+          </button>
         </div>
 
         <div style="display: flex; align-items: center; gap: 8px; margin-top: 14px; flex-wrap: wrap;">
-          <span style="font-size: 12px; color: var(--text-muted);">Hızlı Rol Seçin:</span>
+          <span style="font-size: 12px; color: var(--text-muted); font-weight: 500;">Hızlı Rol Şablonları:</span>
           <span class="pill-btn" onclick="setRole('tester')">+ Tester</span>
           <span class="pill-btn" onclick="setRole('araştırmacı')">+ Araştırmacı</span>
           <span class="pill-btn" onclick="setRole('öğrenci')">+ Öğrenci</span>
@@ -1491,11 +1709,15 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
       <div class="card">
         <div class="card-header">
           <div>
-            <div class="card-title">📋 Kayıtlı Kullanıcılar & Uzaktan Kısıtlama Denetimi</div>
-            <div class="card-subtitle">Kullanıcıların erişebileceği panelleri buradan kısıtlayabilir veya hesaplarını anında askıya alabilirsiniz.</div>
+            <div class="card-title">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+              Kayıtlı Kullanıcılar & Uzaktan Kısıtlama Denetimi
+            </div>
+            <div class="card-subtitle">Kullanıcıların erişebileceği panelleri kısıtlayabilir veya hesaplarını anında askıya alabilirsiniz.</div>
           </div>
           <div class="search-input-wrap">
-            <input type="text" class="search-input" id="searchUsers" placeholder="🔍 Kullanıcı veya rol ara..." oninput="filterUsers()">
+            <svg class="search-icon-svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <input type="text" class="search-input" id="searchUsers" placeholder="Kullanıcı veya rol ara..." oninput="filterUsers()">
           </div>
         </div>
         
@@ -1513,7 +1735,7 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
               </tr>
             </thead>
             <tbody id="usersTableBody">
-              <tr><td colspan="7" style="text-align: center; color: var(--text-muted);">Yükleniyor...</td></tr>
+              <tr><td colspan="7" style="text-align: center; color: var(--text-muted); padding: 20px;">Yükleniyor...</td></tr>
             </tbody>
           </table>
         </div>
@@ -1525,11 +1747,15 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
       <div class="card">
         <div class="card-header">
           <div>
-            <div class="card-title">🚨 Tester Hata ve İstisna Bildirimleri</div>
+            <div class="card-title">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="7.86 2 16.14 2 22 7.86 22 16.14 16.14 22 7.86 22 2 16.14 2 7.86 7.86 2"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+              Tester Hata ve İstisna Bildirimleri
+            </div>
             <div class="card-subtitle">Test esnasında alınan unhandled exception ve çökmeler anlık olarak buraya düşer.</div>
           </div>
           <div class="search-input-wrap">
-            <input type="text" class="search-input" id="searchErrors" placeholder="🔍 Hata türü veya kullanıcı ara..." oninput="filterErrors()">
+            <svg class="search-icon-svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <input type="text" class="search-input" id="searchErrors" placeholder="Hata türü veya kullanıcı ara..." oninput="filterErrors()">
           </div>
         </div>
         <div class="table-container">
@@ -1546,7 +1772,7 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
               </tr>
             </thead>
             <tbody id="errorsTableBody">
-              <tr><td colspan="7" style="text-align: center; color: var(--text-muted);">Hata kaydı bulunmuyor.</td></tr>
+              <tr><td colspan="7" style="text-align: center; color: var(--text-muted); padding: 20px;">Hata kaydı bulunmuyor.</td></tr>
             </tbody>
           </table>
         </div>
@@ -1558,11 +1784,15 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
       <div class="card">
         <div class="card-header">
           <div>
-            <div class="card-title">📜 Kullanıcıların Çalıştırdığı Serpent Betikleri</div>
+            <div class="card-title">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+              Kullanıcıların Çalıştırdığı Serpent Betikleri
+            </div>
             <div class="card-subtitle">Kullanıcıların izin verdiği paylaşılan modeller ve girdi betikleri.</div>
           </div>
           <div class="search-input-wrap">
-            <input type="text" class="search-input" id="searchScripts" placeholder="🔍 Proje veya kullanıcı ara..." oninput="filterScripts()">
+            <svg class="search-icon-svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <input type="text" class="search-input" id="searchScripts" placeholder="Proje veya kullanıcı ara..." oninput="filterScripts()">
           </div>
         </div>
         <div class="table-container">
@@ -1577,7 +1807,7 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
               </tr>
             </thead>
             <tbody id="scriptsTableBody">
-              <tr><td colspan="5" style="text-align: center; color: var(--text-muted);">Kayıt yok.</td></tr>
+              <tr><td colspan="5" style="text-align: center; color: var(--text-muted); padding: 20px;">Kayıt yok.</td></tr>
             </tbody>
           </table>
         </div>
@@ -1592,9 +1822,12 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
   <div class="modal" id="detailModal">
     <div class="modal-content">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
-        <h3 id="modalTitle" style="color: #fff; font-size: 16px;">Detay</h3>
+        <h3 id="modalTitle" style="color: #fff; font-size: 16px; font-weight: 600;">Detay</h3>
         <div style="display: flex; gap: 8px;">
-          <button class="btn btn-sm btn-secondary" onclick="copyDetailModalContent()">📋 Panoya Kopyala</button>
+          <button class="btn btn-sm btn-secondary" onclick="copyDetailModalContent()">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+            Panoya Kopyala
+          </button>
           <button class="btn btn-sm btn-danger" onclick="closeModal()">Kapat</button>
         </div>
       </div>
@@ -1607,33 +1840,39 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
     <div class="modal-content">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
         <div>
-          <h3 style="color: #fff; font-size: 16px;">🛡️ Panel ve Modül Kısıtlamaları</h3>
-          <p style="color: var(--text-muted); font-size: 13px; margin-top: 2px;">
-            Kullanıcı: <strong id="modalRestrictUsername" style="color: var(--accent);"></strong>
+          <h3 style="color: #fff; font-size: 16px; font-weight: 600; display: flex; align-items: center; gap: 8px;">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--ochre-light)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+            Panel ve Modül Kısıtlamaları
+          </h3>
+          <p style="color: var(--text-muted); font-size: 13px; margin-top: 3px;">
+            Kullanıcı: <strong id="modalRestrictUsername" style="color: var(--pine-light);"></strong>
           </p>
         </div>
         <button class="btn btn-sm btn-danger" onclick="closeRestrictionsModal()">Kapat</button>
       </div>
 
-      <div style="background: rgba(244,63,94,0.08); border: 1px solid rgba(244,63,94,0.3); border-radius: 10px; padding: 12px 16px; margin: 14px 0; font-size: 13px; color: #FDA4AF; line-height: 1.4;">
-        ⚠️ <strong>İşleyiş:</strong> İşaretlediğiniz paneller kullanıcının masaüstü uygulamasında anında devre dışı bırakılır ve gizlenir. Canlı heartbeat (en geç 60 sn) ile uygulama yeniden başlatılmadan devreye girer.
+      <div style="background: var(--ochre-subtle); border: 1px solid var(--ochre-border); border-radius: 10px; padding: 12px 16px; margin: 14px 0; font-size: 13px; color: #FDE68A; line-height: 1.45;">
+        <strong>İşleyiş Kuralı:</strong> İşaretlediğiniz paneller kullanıcının masaüstü uygulamasında anında devre dışı bırakılır ve gizlenir. Canlı heartbeat (en geç 60 sn) ile uygulama yeniden başlatılmadan devreye girer.
       </div>
 
       <!-- Quick Preset Buttons -->
       <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px;">
-        <button class="btn btn-sm btn-secondary" onclick="setPresetRestrictions([])">🔓 Tümünü Aç</button>
-        <button class="btn btn-sm btn-secondary" onclick="setPresetRestrictions(ALL_PANEL_IDS)">🛑 Tümünü Kısıtla</button>
-        <button class="btn btn-sm btn-secondary" onclick="setPresetRestrictions(['materials','assembly','geometry','control_rods','detectors','coefficients','simulation','settings','console'])">📊 Salt Okunur (Sadece Sonuç İnceleme)</button>
-        <button class="btn btn-sm btn-secondary" onclick="setPresetRestrictions(['settings','console'])">🧪 Standart Tester (Ayarlar & Konsol Kilitli)</button>
+        <button class="btn btn-sm btn-secondary" onclick="setPresetRestrictions([])">Tümünü Aç</button>
+        <button class="btn btn-sm btn-secondary" onclick="setPresetRestrictions(ALL_PANEL_IDS)">Tümünü Kısıtla</button>
+        <button class="btn btn-sm btn-secondary" onclick="setPresetRestrictions(['materials','assembly','geometry','control_rods','detectors','coefficients','simulation','settings','console'])">Salt Okunur (Sadece Sonuç İnceleme)</button>
+        <button class="btn btn-sm btn-secondary" onclick="setPresetRestrictions(['settings','console'])">Standart Tester (Ayarlar & Konsol Kilitli)</button>
       </div>
 
       <div class="panel-grid" id="panelGridContainer">
         <!-- Rendered dynamically -->
       </div>
 
-      <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px; border-top: 1px solid rgba(255,255,255,0.08); padding-top: 14px;">
+      <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px; border-top: 1px solid var(--border-stone); padding-top: 14px;">
         <button class="btn btn-secondary" onclick="closeRestrictionsModal()">İptal</button>
-        <button class="btn" onclick="saveRestrictions()">💾 Kısıtlamaları Kaydet</button>
+        <button class="btn" onclick="saveRestrictions()">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+          Kısıtlamaları Kaydet
+        </button>
       </div>
     </div>
   </div>
@@ -1667,8 +1906,8 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
       if (!container) return;
       const toast = document.createElement('div');
       toast.className = 'toast';
-      if (type === 'error') toast.style.borderColor = 'var(--danger)';
-      if (type === 'success') toast.style.borderColor = 'var(--success)';
+      if (type === 'error') toast.style.borderColor = 'var(--terracotta)';
+      if (type === 'success') toast.style.borderColor = 'var(--pine)';
       toast.textContent = message;
       container.appendChild(toast);
       setTimeout(() => {
@@ -1684,12 +1923,12 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
       if (document.getElementById('adminLoginDialog')) return;
       const dialog = document.createElement('dialog');
       dialog.id = 'adminLoginDialog';
-      dialog.style.cssText = 'margin:auto;padding:28px;background:var(--bg-surface);color:var(--text);border:1px solid var(--border-hover);border-radius:16px;box-shadow:0 20px 60px rgba(0,0,0,0.8);max-width:380px;width:90%';
+      dialog.style.cssText = 'margin:auto;padding:28px;background:var(--bg-surface);color:var(--text-main);border:1px solid var(--border-stone-hover);border-radius:16px;box-shadow:0 20px 60px rgba(0,0,0,0.85);max-width:380px;width:90%';
       dialog.addEventListener('cancel', event => event.preventDefault());
       const form = document.createElement('form');
       const title = document.createElement('h2');
-      title.textContent = '⚛️ Yönetici Girişi';
-      title.style.cssText = 'font-size:18px;margin-bottom:16px;color:#fff;text-align:center;';
+      title.textContent = 'Serpent Studio Yönetici Girişi';
+      title.style.cssText = 'font-size:18px;margin-bottom:16px;color:#fff;text-align:center;font-weight:600;letter-spacing:-0.2px;';
       const username = document.createElement('input');
       username.placeholder = 'Kullanıcı adı'; username.autocomplete = 'username'; username.required = true;
       username.style.cssText = 'width:100%;margin-bottom:12px;display:block;';
@@ -1697,7 +1936,7 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
       password.type = 'password'; password.placeholder = 'Şifre'; password.autocomplete = 'current-password'; password.required = true;
       password.style.cssText = 'width:100%;margin-bottom:14px;display:block;';
       const error = document.createElement('p'); error.setAttribute('role', 'alert');
-      error.style.cssText = 'color:var(--danger);font-size:12px;margin-bottom:12px;min-height:16px;text-align:center;';
+      error.style.cssText = 'color:var(--terracotta);font-size:12px;margin-bottom:12px;min-height:16px;text-align:center;';
       const submit = document.createElement('button'); submit.type = 'submit'; submit.className = 'btn'; submit.textContent = 'Giriş Yap';
       submit.style.cssText = 'width:100%;justify-content:center;padding:11px;';
       form.append(title, username, password, error, submit);
@@ -1707,7 +1946,7 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
         .then(response => response.json().then(data => {
           if (!response.ok || data.status !== 'ok' || !data.token) throw new Error(data.message || 'Giriş başarısız.');
           adminToken = data.token; password.value = '';
-          document.getElementById('adminName').textContent = '👤 ' + data.username;
+          document.getElementById('adminName').textContent = data.username;
           dialog.close(); dialog.remove(); loadAll();
           showToast('Hoş geldiniz, ' + data.username + '!', 'success');
         }))
@@ -1835,18 +2074,19 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
         textCell(tr, u.username);
         textCell(tr, u.display_name || '-');
         const roleCell = textCell(tr, '');
-        actionButton(roleCell, '🏷️ ' + u.role + ' ✏️', () => editUserRole(u.username, u.role), 'btn-secondary');
+        actionButton(roleCell, u.role, () => editUserRole(u.username, u.role), 'role-badge');
         const state = textCell(tr, isActive ? 'Aktif' : 'Askıya Alındı');
-        state.style.color = isActive ? 'var(--success)' : 'var(--danger)';
+        state.style.color = isActive ? 'var(--pine-light)' : 'var(--terracotta)';
+        state.style.fontWeight = '600';
         const permissions = textCell(tr, rPanels.length ? rPanels.length + ' Panel Kısıtlı' : 'Tüm Paneller Açık');
         permissions.title = rPanels.join(', ');
-        permissions.style.color = rPanels.length ? 'var(--warning)' : 'var(--text-muted)';
+        permissions.style.color = rPanels.length ? 'var(--ochre-light)' : 'var(--text-muted)';
         textCell(tr, lastSeenStr);
         const actions = textCell(tr, ''); actions.style.whiteSpace = 'nowrap';
-        actionButton(actions, '🛡️ Kısıtla', () => openRestrictionsModal(u.username), 'btn-secondary');
-        actionButton(actions, isActive ? '🛑 Askıya Al' : '✅ Aç', () => toggleUser(u.username, !isActive), isActive ? 'btn-danger' : 'btn-secondary');
-        actionButton(actions, '🔑 Şifre', () => resetPass(u.username), 'btn-warning');
-        actionButton(actions, '🗑️', () => deleteUser(u.username), 'btn-danger');
+        actionButton(actions, 'Kısıtla', () => openRestrictionsModal(u.username), 'btn-secondary');
+        actionButton(actions, isActive ? 'Askıya Al' : 'Aktifleştir', () => toggleUser(u.username, !isActive), isActive ? 'btn-danger' : 'btn-success');
+        actionButton(actions, 'Şifre', () => resetPass(u.username), 'btn-warning');
+        actionButton(actions, 'Sil', () => deleteUser(u.username), 'btn-danger');
         tbody.appendChild(tr);
       });
     }
@@ -2016,17 +2256,19 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
         const timeStr = new Date(e.timestamp * 1000).toLocaleString('tr-TR');
         textCell(tr, timeStr);
         textCell(tr, e.username);
-        textCell(tr, e.exception_type).style.color = 'var(--danger)';
+        const exCell = textCell(tr, e.exception_type);
+        exCell.style.color = 'var(--terracotta)';
+        exCell.style.fontWeight = '600';
         textCell(tr, String(e.exception_message || '').substring(0, 50) + '...');
         textCell(tr, e.active_tab || '-');
         textCell(tr, e.app_version || '-');
-        actionButton(textCell(tr, ''), '🔍 Detay', () => showTraceback(e), 'btn-secondary');
+        actionButton(textCell(tr, ''), 'Detay İncele', () => showTraceback(e), 'btn-secondary');
         tbody.appendChild(tr);
       });
     }
 
     function showTraceback(e) {
-      document.getElementById('modalTitle').innerText = `🚨 Hata: ${e.exception_type} (${e.username})`;
+      document.getElementById('modalTitle').innerText = `Hata: ${e.exception_type} (${e.username})`;
       document.getElementById('modalBody').innerText = `Kullanıcı: ${e.username}\nSürüm: ${e.app_version}\nPlatform: ${e.platform}\nAktif Sekme: ${e.active_tab}\nZaman: ${new Date(e.timestamp * 1000).toLocaleString('tr-TR')}\nMesaj: ${e.exception_message}\n\n[TRACEBACK]:\n${e.traceback}\n\n[LOGLAR]:\n${e.recent_logs || '-'}`;
       document.getElementById('detailModal').style.display = 'flex';
     }
@@ -2066,14 +2308,14 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
         textCell(tr, s.username);
         textCell(tr, s.project_name || '-');
         textCell(tr, (s.size / 1024).toFixed(1) + ' KB');
-        actionButton(textCell(tr, ''), '📄 Betiği Gör', () => viewScript(s.id), 'btn-secondary');
+        actionButton(textCell(tr, ''), 'Betiği Gör', () => viewScript(s.id), 'btn-secondary');
         tbody.appendChild(tr);
       });
     }
 
     function viewScript(id) {
       apiCall('/admin/api/script/' + id).then(data => {
-        document.getElementById('modalTitle').innerText = "📜 Serpent Girdi Betiği";
+        document.getElementById('modalTitle').innerText = "Serpent Girdi Betiği";
         document.getElementById('modalBody').innerText = data.content;
         document.getElementById('detailModal').style.display = 'flex';
       });
