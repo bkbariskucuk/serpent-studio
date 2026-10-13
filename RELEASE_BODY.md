@@ -1,6 +1,6 @@
-# Serpent Studio v1.2.70.53 (Alpha)
+# Serpent Studio v1.2.70.55 (Alpha)
 
-[Serpent.Studio.AppImage indir](https://github.com/bkbariskucuk/serpent-studio/releases/download/v1.2.70.53/Serpent.Studio.AppImage)
+[Serpent.Studio.AppImage indir](https://github.com/bkbariskucuk/serpent-studio/releases/download/v1.2.70.55/Serpent.Studio.AppImage)
 
 ```bash
 chmod +x Serpent.Studio.AppImage
@@ -9,15 +9,13 @@ chmod +x Serpent.Studio.AppImage
 
 Linux x86_64 (Ubuntu 20.04 / Debian 11 ve üzeri). FUSE bulunmayan sistemlerde `--appimage-extract-and-run` parametresiyle çalıştırılabilir. Python veya ek bağımlılık kurulumu gerektirmez.
 
-## v1.2.70.53 ile Gelen İyileştirmeler
+## v1.2.70.55 ile Gelen İyileştirmeler
 
-* **Radar Minimap Silinme ve Kaydırma Güvenliği (RuntimeError Çözümü):** Popout ve çekirdek kanvaslarında minimap kapatıldığında/ayrıldığında kaydırma çubuğu dinleyicilerinin askıda kalması nedeniyle oluşan `RuntimeError: wrapped C/C++ object of type CanvasRadarMinimap has been deleted` hatası giderildi. `@pyqtSlot()`, `self.destroyed` bağlantısı ve korumalı temizleme rutini entegre edildi.
-* **Oturum Denetleyici Uygulama Kapanış Koruması:** `SessionAccessController` nesnesinin `QApplication` üzerinde event filter olarak asılı kalmasından ötürü pencere kapatıldığında SIP bellek temizliğinde yaşanan `SIGSEGV` (Signal 11 / `sip_api_get_address`) hatası giderildi. Çıkışta tüm event filtreleri kaldırılarak uygulamanın temiz kapanması sağlandı.
-* **Editöre Dön Butonu Açık Tema Uyumu:** Analiz çıktılarındaki "Back to Editor" butonu açık temada yumuşak buz mavisi arka plan (`#F0F9FF`) ve okyanus mavisi çerçeve (`#0284C7`) ile temaya tam uyumlu hale getirildi.
-* **Sağ Alt Oturum Doğrulama Bildirimi:** Ağ kesintileri ve geçici kalp atışı hatalarında kullanıcı ekranını kilitleyen modal pencereler kaldırıldı. Sağ altta konumlanan, otomatik kapanan `SessionNotificationPopup` eklendi; kullanıcı aktifken arka planda otomatik onaylanır ve çalışma asla kilitlenmez.
-* **Kapsamlı Serpent ve Nükleer Kütüphane Doğrulayıcısı:** Standart olmayan ortamlarda Serpent ikili dosyası (`sss2`) ve nükleer veri kütüphanelerini (`acelib`, `declib`, `nfylib`, `photonlib`) tespit eden derin tarayıcı ve doğrulayıcı geliştirildi.
-* **İçe Aktarma Masaüstü Kısayolu:** Dosya içe aktarma diyaloğu sol çubuğuna doğrudan "Masaüstü / Desktop", "Çalışma Alanı / Workspace" ve "Ev Dizini / Home" kısayol butonları entegre edildi.
-* **Yönetim Paneli Hata Tekilleştirme:** `/admin` kontrol panelinde sürekli tekrar eden hatalar tekilleştirildi (`occurrence_count`, `call_site`, `fingerprint`), "Benzersiz Hatalar" görünümü ve detaylı hata inceleme modalı eklendi.
+* **Çekirdek Kanvası Reflektör Geri/İleri Alma (Ctrl+Z / Ctrl+Y) Entegrasyonu:** Core Canvas üzerinde reflektör malzemesi önayarı (`reflector_combo`), sınır kabı geometrisi (`reflector_shape_combo`), radyal kalınlık (`ref_rad_thick_spin`), eksenel kalınlık (`ref_ax_thick_spin`) ve çekirdek latis şekli (`shape_combo`) değişiklikleri geri alma/yineleme (undo/redo) motoruna tam entegre edildi.
+* **Çekirdek Silinme (Core Wiping) Hatasının Kesin Çözümü:** Öncesinde reflektör kontrolleri undo durum kaydetmediği için, reflektör değiştirildikten sonra Ctrl+Z basıldığında yığındaki eski boş durum tetikleniyor ve tüm çekirdek matrisi siliniyordu. Artık çekirdek matrisi ve reflektör konfigürasyonu atomik olarak saklanmakta; `_restoring_undo_state` koruması ve sinyal bloklamaları ile geri alma sırasında yığının bozulması veya çekirdeğin sıfırlanması tamamen önlendi.
+* **Debounced Spinbox Oturumu ve Çift Durum Koruması:** Radyal ve eksenel kalınlık spinbox değişimleri 800 ms zamanlayıcı ile debounced spin undo oturumuna bağlandı; yinelenen veya boş durumların yığına eklenmesi ve redo yığınının bozulması engellendi.
+* **FreeType Font Önbelleği Segfault Koruması (`QT_NO_FT_CACHE=1`):** Linux/Wayland ortamlarında FreeType 2.14+ ve Qt 6.7 kombinasyonunda glif önbelleğe alma aşamasında tetiklenen çökme (`Signal 11 SEGV`) engellendi.
+* **Çekirdek Kanvası Metin ve Ölçekleme Güvenliği:** Kanvas henüz gösterilmemişken dejenere ölçek matrisi (`m11=0, m22=0`) oluşması önlendi; çekirdek hücre etiketleri için güvenli font alt sınırı uygulandı.
 
 ## İndirme ve Doğrulama
 
