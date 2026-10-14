@@ -44,6 +44,28 @@ MAX_REQUEST_BODY = 2 * 1024 * 1024
 REQUEST_TIMEOUT_SECONDS = 15
 MAX_CONCURRENT_REQUESTS = 32
 
+
+def _load_server_version() -> str:
+    candidates = [
+        os.path.join(os.path.dirname(__file__), "..", "VERSION"),
+        os.path.join(os.path.dirname(__file__), "VERSION"),
+        "/app/VERSION",
+        "VERSION",
+    ]
+    for c in candidates:
+        if os.path.isfile(c):
+            try:
+                with open(c, "r", encoding="utf-8") as f:
+                    ver = f.read().strip()
+                    if ver:
+                        return ver
+            except Exception:
+                pass
+    return "v1.2.70.56"
+
+
+CURRENT_SERVER_VERSION = _load_server_version()
+
 RATE_LIMIT_WINDOW_SECONDS = 300.0
 RATE_LIMIT_MAX_ATTEMPTS = 5
 RATE_LIMIT_LOCKOUT_SECONDS = 300.0
@@ -245,6 +267,10 @@ class Database:
                 cursor.execute(f"ALTER TABLE error_reports ADD COLUMN last_seen {timestamp_type}")
             if "extra_context" not in err_cols:
                 cursor.execute("ALTER TABLE error_reports ADD COLUMN extra_context TEXT DEFAULT '{}'")
+            if "affected_users" not in err_cols:
+                cursor.execute("ALTER TABLE error_reports ADD COLUMN affected_users TEXT DEFAULT '[]'")
+            if "status" not in err_cols:
+                cursor.execute("ALTER TABLE error_reports ADD COLUMN status TEXT DEFAULT 'open'")
 
             if bootstrap_admin:
                 self._bootstrap_admin(cursor)
@@ -463,19 +489,34 @@ class Database:
     def record_error(
         self, username: str, app_version: str, platform: str,
         exception_type: str, exception_message: str, traceback_str: str,
-        active_tab: str = "", recent_logs: str = "", extra_context: Optional[Dict[str, Any]] = None
+        active_tab: str = "", recent_logs: str = "", extra_context: Optional[Dict[str, Any]] = None,
+        occurrence_increment: int = 1
     ) -> int:
         fp = compute_error_fingerprint(exception_type, exception_message, traceback_str)
         now = time.time()
         extra_ctx_str = json.dumps(extra_context or {})
+        inc = max(1, int(occurrence_increment or 1))
 
         with self._lock, self._get_conn() as conn:
             cur = conn.cursor()
-            cur.execute("SELECT id, occurrence_count, username FROM error_reports WHERE fingerprint = ? ORDER BY timestamp DESC LIMIT 1", (fp,))
+            cur.execute("SELECT id, occurrence_count, username, affected_users FROM error_reports WHERE fingerprint = ? ORDER BY timestamp DESC LIMIT 1", (fp,))
             existing = cur.fetchone()
             if existing:
                 row_id = existing['id']
-                count = (existing['occurrence_count'] or 1) + 1
+                count = (existing['occurrence_count'] or 1) + inc
+
+                # Parse and accumulate affected users
+                raw_users = existing.get('affected_users') if isinstance(existing, dict) else (existing['affected_users'] if 'affected_users' in existing.keys() else None)
+                try:
+                    users_list = json.loads(raw_users or "[]")
+                except Exception:
+                    users_list = []
+                if not isinstance(users_list, list):
+                    users_list = []
+                if username and username not in users_list:
+                    users_list.append(username)
+                users_json = json.dumps(users_list)
+
                 cur.execute("""
                     UPDATE error_reports
                     SET occurrence_count = ?,
@@ -484,28 +525,38 @@ class Database:
                         recent_logs = ?,
                         active_tab = ?,
                         app_version = ?,
-                        extra_context = ?
+                        extra_context = ?,
+                        affected_users = ?,
+                        status = 'open'
                     WHERE id = ?
-                """, (count, now, now, recent_logs, active_tab, app_version, extra_ctx_str, row_id))
+                """, (count, now, now, recent_logs, active_tab, app_version, extra_ctx_str, users_json, row_id))
                 conn.commit()
                 return row_id
 
+            users_json = json.dumps([username] if username else [])
             sql = """
                 INSERT INTO error_reports
-                (username, app_version, platform, exception_type, exception_message, traceback, active_tab, recent_logs, timestamp, fingerprint, occurrence_count, last_seen, extra_context)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+                (username, app_version, platform, exception_type, exception_message, traceback, active_tab, recent_logs, timestamp, fingerprint, occurrence_count, last_seen, extra_context, affected_users, status)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'open')
             """
             if self._backend.postgres:
                 sql += " RETURNING id"
             cur.execute(sql, (
                 username, app_version, platform, exception_type, exception_message,
-                traceback_str, active_tab, recent_logs, now, fp, now, extra_ctx_str
+                traceback_str, active_tab, recent_logs, now, fp, inc, now, extra_ctx_str, users_json
             ))
             row_id = cur.fetchone()['id'] if self._backend.postgres else cur.lastrowid
             conn.commit()
             return row_id
 
-    def list_errors(self, limit: int = 200, unique_only: bool = True) -> List[Dict[str, Any]]:
+    def set_error_status(self, fingerprint: str, status: str = "resolved") -> bool:
+        with self._lock, self._get_conn() as conn:
+            cur = conn.cursor()
+            cur.execute("UPDATE error_reports SET status = ? WHERE fingerprint = ?", (status, fingerprint))
+            conn.commit()
+            return True
+
+    def list_errors(self, limit: int = 200, unique_only: bool = True, status_filter: Optional[str] = None) -> List[Dict[str, Any]]:
         with self._lock, self._get_conn() as conn:
             cur = conn.cursor()
             cur.execute("SELECT * FROM error_reports ORDER BY timestamp DESC LIMIT ?", (limit,))
@@ -519,6 +570,20 @@ class Database:
                 if not r.get("last_seen"):
                     r["last_seen"] = r.get("timestamp")
                 r["first_seen"] = r.get("timestamp")
+                if not r.get("status"):
+                    r["status"] = "open"
+
+                raw_users = r.get("affected_users")
+                try:
+                    r["users"] = json.loads(raw_users) if raw_users else ([r["username"]] if r.get("username") else [])
+                except Exception:
+                    r["users"] = [r["username"]] if r.get("username") else []
+
+                raw_ctx = r.get("extra_context")
+                try:
+                    r["extra_context_data"] = json.loads(raw_ctx) if isinstance(raw_ctx, str) else (raw_ctx or {})
+                except Exception:
+                    r["extra_context_data"] = {}
 
                 tb = r.get("traceback", "")
                 frames = re.findall(r'File "([^"]+)", line (\d+), in (\w+)', tb)
@@ -528,13 +593,15 @@ class Database:
                 else:
                     r["call_site"] = r.get("active_tab") or "-"
 
+            if status_filter and status_filter != "all":
+                rows = [r for r in rows if r.get("status") == status_filter]
+
             if unique_only:
                 grouped: Dict[str, Dict[str, Any]] = {}
                 for r in rows:
                     fp = r["fingerprint"]
                     if fp not in grouped:
                         grouped[fp] = dict(r)
-                        grouped[fp]["users"] = [r["username"]]
                     else:
                         grouped[fp]["occurrence_count"] = (grouped[fp].get("occurrence_count", 1) or 1) + (r.get("occurrence_count", 1) or 1)
                         if r["timestamp"] > grouped[fp]["timestamp"]:
@@ -543,11 +610,14 @@ class Database:
                             grouped[fp]["recent_logs"] = r.get("recent_logs")
                             grouped[fp]["app_version"] = r.get("app_version")
                             grouped[fp]["active_tab"] = r.get("active_tab")
+                            grouped[fp]["status"] = r.get("status", "open")
+                            if r.get("extra_context_data"):
+                                grouped[fp]["extra_context_data"] = r["extra_context_data"]
                         if r["timestamp"] < grouped[fp].get("first_seen", float("inf")):
                             grouped[fp]["first_seen"] = r["timestamp"]
-                        u = r["username"]
-                        if u not in grouped[fp]["users"]:
-                            grouped[fp]["users"].append(u)
+                        for u in r.get("users", []):
+                            if u and u not in grouped[fp]["users"]:
+                                grouped[fp]["users"].append(u)
 
                 res = list(grouped.values())
                 res.sort(key=lambda x: x.get("last_seen", x.get("timestamp", 0)), reverse=True)
@@ -740,7 +810,23 @@ class ControlPlaneHandler(http.server.BaseHTTPRequestHandler):
         path = parsed.path.rstrip("/")
 
         if path == "/health" or path == "":
-            self._send_json(200, {"status": "ok", "service": "SerpentStudio-ControlPlane", "time": time.time()})
+            self._send_json(200, {
+                "status": "ok",
+                "service": "SerpentStudio-ControlPlane",
+                "version": CURRENT_SERVER_VERSION,
+                "latest_client_version": CURRENT_SERVER_VERSION,
+                "time": time.time(),
+            })
+            return
+
+        if path in ("/v1/version", "/api/v1/version"):
+            self._send_json(200, {
+                "status": "ok",
+                "server_version": CURRENT_SERVER_VERSION,
+                "latest_client_version": CURRENT_SERVER_VERSION,
+                "minimum_client_version": "v1.2.0.0",
+                "time": time.time(),
+            })
             return
 
         if path == "/admin":
@@ -765,7 +851,8 @@ class ControlPlaneHandler(http.server.BaseHTTPRequestHandler):
                 query_params = urllib.parse.parse_qs(parsed.query)
                 unique_param = query_params.get("unique", ["1"])[0]
                 unique_mode = unique_param not in ("0", "false")
-                errors = self.db.list_errors(unique_only=unique_mode)
+                status_filter = query_params.get("status", [None])[0]
+                errors = self.db.list_errors(unique_only=unique_mode, status_filter=status_filter)
                 self._send_json(200, {"status": "ok", "errors": errors, "unique_mode": unique_mode})
                 return
 
@@ -908,6 +995,7 @@ class ControlPlaneHandler(http.server.BaseHTTPRequestHandler):
                 return
             username = session_data["username"]
 
+            client_count = int(body.get("client_occurrence_count", 1) or 1)
             rep_id = self.db.record_error(
                 username=username,
                 app_version=str(body.get("app_version", "")),
@@ -918,6 +1006,7 @@ class ControlPlaneHandler(http.server.BaseHTTPRequestHandler):
                 active_tab=str(body.get("active_tab", "")),
                 recent_logs=str(body.get("recent_logs", "")),
                 extra_context=body.get("extra_context"),
+                occurrence_increment=client_count,
             )
             self._send_json(200, {"status": "ok", "report_id": rep_id, "message": "Error report recorded."})
             return
@@ -1029,6 +1118,19 @@ class ControlPlaneHandler(http.server.BaseHTTPRequestHandler):
                 u = str(body.get("username", ""))
                 ok = self.db.delete_user(u)
                 self._send_json(200 if ok else 400, {"status": "ok" if ok else "error"})
+                return
+
+            if path == "/admin/api/errors/status":
+                fp = str(body.get("fingerprint", "")).strip()
+                new_status = str(body.get("status", "resolved")).strip().lower()
+                if not fp:
+                    self._send_json(400, {"status": "error", "message": "Missing fingerprint."})
+                    return
+                if new_status not in ("open", "resolved", "ignored"):
+                    self._send_json(400, {"status": "error", "message": "Invalid status. Must be open, resolved, or ignored."})
+                    return
+                ok = self.db.set_error_status(fp, new_status)
+                self._send_json(200 if ok else 400, {"status": "ok" if ok else "error", "status": new_status})
                 return
 
         self._send_json(404, {"status": "error", "message": "Endpoint not found."})
@@ -1704,6 +1806,7 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
           <h1>Serpent Studio <span class="badge">Yönetim ve Telemetri</span></h1>
           <div style="margin-top: 4px; display: flex; align-items: center; gap: 8px;">
             <span class="status-pill"><span class="pulse-dot"></span> Canlı Bulut (Render + Neon PostgreSQL)</span>
+            <span class="badge" style="background: rgba(56, 189, 248, 0.12); color: #38BDF8; border: 1px solid rgba(56, 189, 248, 0.3);">v1.2.70.56</span>
           </div>
         </div>
       </div>
@@ -1872,7 +1975,12 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
               <svg class="search-icon-svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
               <input type="text" class="search-input" id="searchErrors" placeholder="Hata türü, dosya veya kullanıcı ara..." oninput="filterErrors()">
             </div>
-            <div style="display: flex; gap: 4px; background: var(--bg-surface); padding: 2px; border-radius: 6px; border: 1px solid var(--border-default);">
+            <div style="display: flex; gap: 4px; background: var(--bg-surface); padding: 2px; border-radius: 6px; border: 1px solid var(--border-stone);">
+              <button id="btnStatusOpen" class="btn btn-secondary active" style="font-size: 11px; padding: 4px 10px; border: none;" onclick="toggleStatusFilter('open')">Açık Hatalar</button>
+              <button id="btnStatusResolved" class="btn btn-secondary" style="font-size: 11px; padding: 4px 10px; border: none;" onclick="toggleStatusFilter('resolved')">Çözülenler</button>
+              <button id="btnStatusAll" class="btn btn-secondary" style="font-size: 11px; padding: 4px 10px; border: none;" onclick="toggleStatusFilter('all')">Tümü</button>
+            </div>
+            <div style="display: flex; gap: 4px; background: var(--bg-surface); padding: 2px; border-radius: 6px; border: 1px solid var(--border-stone);">
               <button id="btnErrorsUnique" class="btn btn-secondary active" style="font-size: 11px; padding: 4px 10px; border: none;" onclick="toggleErrorsView(true)">Benzersiz Hatalar</button>
               <button id="btnErrorsAll" class="btn btn-secondary" style="font-size: 11px; padding: 4px 10px; border: none;" onclick="toggleErrorsView(false)">Tüm Kayıtlar</button>
             </div>
@@ -1883,6 +1991,7 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
             <thead>
               <tr>
                 <th>Son Görülme</th>
+                <th>Durum</th>
                 <th>Tekrar</th>
                 <th>Hata & Çağrı Konumu</th>
                 <th>Hata Mesajı</th>
@@ -1893,7 +2002,7 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
               </tr>
             </thead>
             <tbody id="errorsTableBody">
-              <tr><td colspan="8" style="text-align: center; color: var(--text-muted); padding: 20px;">Hata kaydı bulunmuyor.</td></tr>
+              <tr><td colspan="9" style="text-align: center; color: var(--text-muted); padding: 20px;">Hata kaydı bulunmuyor.</td></tr>
             </tbody>
           </table>
         </div>
@@ -1941,10 +2050,11 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
 
   <!-- MODAL: DETAIL (TRACEBACK / SCRIPT) -->
   <div class="modal" id="detailModal">
-    <div class="modal-content">
-      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
+    <div class="modal-content" style="max-width: 900px; width: 95%;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; flex-wrap: wrap; gap: 10px;">
         <h3 id="modalTitle" style="color: #fff; font-size: 16px; font-weight: 600;">Detay</h3>
-        <div style="display: flex; gap: 8px;">
+        <div style="display: flex; gap: 8px; align-items: center;">
+          <button id="btnModalStatus" class="btn btn-sm btn-success" style="display:none;" onclick="toggleCurrentModalErrorStatus()"></button>
           <button class="btn btn-sm btn-secondary" onclick="copyDetailModalContent()">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
             Panoya Kopyala
@@ -1952,7 +2062,7 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
           <button class="btn btn-sm btn-danger" onclick="closeModal()">Kapat</button>
         </div>
       </div>
-      <pre id="modalBody"></pre>
+      <pre id="modalBody" style="max-height: 520px; overflow-y: auto; background: var(--bg-input); padding: 14px; border-radius: 8px; border: 1px solid var(--border-stone); font-size: 12px; color: var(--text-soft); font-family: monospace; white-space: pre-wrap; word-break: break-all;"></pre>
     </div>
   </div>
 
@@ -1999,9 +2109,12 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
   </div>
 
   <script>
-    // Never persist bearer credentials in browser storage.
-    localStorage.removeItem('serpent_admin_token');
-    let adminToken = '';
+    const appStorage = (typeof sessionStorage !== 'undefined') ? sessionStorage : {
+      getItem: function() { return null; },
+      setItem: function() {},
+      removeItem: function() {}
+    };
+    let adminToken = appStorage.getItem('serpent_admin_token') || '';
     let currentRestrictUser = '';
     let usersCache = [];
     let errorsCache = [];
@@ -2040,7 +2153,14 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
     }
 
     function checkAuth() {
-      if (adminToken) { loadAll(); return; }
+      if (adminToken) {
+        const savedUser = appStorage.getItem('serpent_admin_username');
+        if (savedUser && document.getElementById('adminName')) {
+          document.getElementById('adminName').textContent = savedUser;
+        }
+        loadAll();
+        return;
+      }
       if (document.getElementById('adminLoginDialog')) return;
       const dialog = document.createElement('dialog');
       dialog.id = 'adminLoginDialog';
@@ -2067,9 +2187,11 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
         .then(response => response.json().then(data => {
           if (!response.ok || data.status !== 'ok' || !data.token) throw new Error(data.message || 'Giriş başarısız.');
           adminToken = data.token; password.value = '';
-          document.getElementById('adminName').textContent = data.username;
+          appStorage.setItem('serpent_admin_token', data.token);
+          appStorage.setItem('serpent_admin_username', data.username || username.value);
+          document.getElementById('adminName').textContent = data.username || username.value;
           dialog.close(); dialog.remove(); loadAll();
-          showToast('Hoş geldiniz, ' + data.username + '!', 'success');
+          showToast('Hoş geldiniz, ' + (data.username || username.value) + '!', 'success');
         }))
         .catch(err => { error.textContent = err.message || 'Sunucuya bağlanılamadı.'; })
         .finally(() => { submit.disabled = false; });
@@ -2080,6 +2202,8 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
     function logoutAdmin() {
       const token = adminToken;
       adminToken = '';
+      appStorage.removeItem('serpent_admin_token');
+      appStorage.removeItem('serpent_admin_username');
       fetch('/admin/api/logout', {method:'POST', headers:{Authorization:'Bearer ' + token}}).finally(() => location.reload());
     }
 
@@ -2360,6 +2484,20 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
     }
 
     let errorsUniqueMode = true;
+    let errorsStatusFilter = 'open';
+    let currentModalError = null;
+
+    function toggleStatusFilter(filter) {
+      errorsStatusFilter = filter;
+      ['open', 'resolved', 'all'].forEach(s => {
+        const btn = document.getElementById('btnStatus' + s.charAt(0).toUpperCase() + s.slice(1));
+        if (btn) {
+          if (s === filter) btn.classList.add('active');
+          else btn.classList.remove('active');
+        }
+      });
+      loadErrors();
+    }
 
     function toggleErrorsView(isUnique) {
       errorsUniqueMode = isUnique;
@@ -2378,7 +2516,11 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
     }
 
     function loadErrors() {
-      apiCall('/admin/api/errors?unique=' + (errorsUniqueMode ? '1' : '0')).then(data => {
+      let url = '/admin/api/errors?unique=' + (errorsUniqueMode ? '1' : '0');
+      if (errorsStatusFilter && errorsStatusFilter !== 'all') {
+        url += '&status=' + encodeURIComponent(errorsStatusFilter);
+      }
+      apiCall(url).then(data => {
         errorsCache = data.errors || [];
         updateStats();
         renderErrorsTable(errorsCache);
@@ -2389,7 +2531,7 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
       const tbody = document.getElementById('errorsTableBody');
       tbody.innerHTML = '';
       if (!list || list.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; padding:24px; color:var(--text-muted);">Henüz kaydedilmiş hata yok.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="9" style="text-align:center; padding:24px; color:var(--text-muted);">Henüz kaydedilmiş hata yok.</td></tr>';
         return;
       }
       list.forEach(e => {
@@ -2397,6 +2539,28 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
         const timeVal = e.last_seen || e.timestamp;
         const timeStr = timeVal ? new Date(timeVal * 1000).toLocaleString('tr-TR') : '-';
         textCell(tr, timeStr);
+
+        // Status badge
+        const statusCell = textCell(tr, '');
+        const isResolved = (e.status === 'resolved');
+        const statusBadge = document.createElement('span');
+        statusBadge.style.display = 'inline-block';
+        statusBadge.style.padding = '2px 8px';
+        statusBadge.style.borderRadius = '99px';
+        statusBadge.style.fontWeight = '600';
+        statusBadge.style.fontSize = '11px';
+        if (isResolved) {
+          statusBadge.style.backgroundColor = 'var(--pine-subtle)';
+          statusBadge.style.color = 'var(--pine-light)';
+          statusBadge.style.border = '1px solid var(--pine-border)';
+          statusBadge.textContent = '✓ Çözüldü';
+        } else {
+          statusBadge.style.backgroundColor = 'rgba(239, 68, 68, 0.15)';
+          statusBadge.style.color = '#FCA5A5';
+          statusBadge.style.border = '1px solid rgba(239, 68, 68, 0.35)';
+          statusBadge.textContent = '● Açık';
+        }
+        statusCell.appendChild(statusBadge);
 
         // Occurrence count badge
         const count = e.occurrence_count || 1;
@@ -2423,9 +2587,16 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
         // Exception type & Call site
         const exCell = document.createElement('td');
         const exTitle = document.createElement('div');
-        exTitle.style.color = 'var(--terracotta)';
-        exTitle.style.fontWeight = '700';
-        exTitle.textContent = e.exception_type || 'Unknown';
+        const isDiag = (e.exception_type === 'UserDiagnosticReport') || (e.extra_context_data && e.extra_context_data.manual_report);
+        if (isDiag) {
+          exTitle.style.color = 'var(--stream-light)';
+          exTitle.style.fontWeight = '700';
+          exTitle.textContent = 'Tanı Raporu (Diagnostic)';
+        } else {
+          exTitle.style.color = 'var(--terracotta)';
+          exTitle.style.fontWeight = '700';
+          exTitle.textContent = e.exception_type || 'Unknown';
+        }
         exCell.appendChild(exTitle);
         if (e.call_site && e.call_site !== '-') {
           const csLabel = document.createElement('div');
@@ -2450,26 +2621,89 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
       });
     }
 
+    function toggleCurrentModalErrorStatus() {
+      if (!currentModalError || !currentModalError.fingerprint) return;
+      const newStatus = (currentModalError.status === 'resolved') ? 'open' : 'resolved';
+      apiCall('/admin/api/errors/status', 'POST', {
+        fingerprint: currentModalError.fingerprint,
+        status: newStatus
+      }).then(res => {
+        if (res.status === 'ok') {
+          currentModalError.status = newStatus;
+          showToast(newStatus === 'resolved' ? "Hata çözüldü olarak işaretlendi!" : "Hata yeniden açık duruma getirildi.", "success");
+          updateModalStatusButton(newStatus);
+          loadErrors();
+        } else {
+          showToast("Durum güncellenemedi: " + (res.message || 'Bilinmeyen hata'), "error");
+        }
+      });
+    }
+
+    function updateModalStatusButton(st) {
+      const btn = document.getElementById('btnModalStatus');
+      if (!btn) return;
+      btn.style.display = 'inline-flex';
+      if (st === 'resolved') {
+        btn.className = 'btn btn-sm btn-warning';
+        btn.textContent = 'Tekrar Aç';
+      } else {
+        btn.className = 'btn btn-sm btn-success';
+        btn.textContent = '✓ Çözüldü Olarak İşaretle';
+      }
+    }
+
     function showTraceback(e) {
-      document.getElementById('modalTitle').innerText = `Hata Detayı: ${e.exception_type} (${e.occurrence_count || 1}x Tekrar)`;
+      currentModalError = e;
+      updateModalStatusButton(e.status || 'open');
+
+      const ctx = e.extra_context_data || {};
+      const isDiag = (e.exception_type === 'UserDiagnosticReport') || (ctx && ctx.manual_report);
+      document.getElementById('modalTitle').innerText = isDiag
+        ? `Tanı Raporu: ${e.username || 'Kullanıcı'} (${e.occurrence_count || 1}x Gönderim)`
+        : `Hata Detayı: ${e.exception_type} (${e.occurrence_count || 1}x Tekrar)`;
       const firstStr = e.first_seen ? new Date(e.first_seen * 1000).toLocaleString('tr-TR') : '-';
       const lastStr = new Date((e.last_seen || e.timestamp) * 1000).toLocaleString('tr-TR');
       const usersStr = (e.users && e.users.length > 0) ? e.users.join(', ') : e.username;
 
       let overview = `=======================================================\n` +
-                     `HATA DETAYI & GELİŞTİRİCİ RAPORU\n` +
+                     (isDiag ? `KULLANICI MANUEL TANI RAPORU & SİSTEM ÖZETİ\n` : `HATA DETAYI & GELİŞTİRİCİ RAPORU\n`) +
                      `=======================================================\n` +
                      `Hata Türü      : ${e.exception_type}\n` +
                      `Hata Mesajı    : ${e.exception_message}\n` +
                      `Çağrı Konumu   : ${e.call_site || '-'}\n` +
+                     `Durum          : ${(e.status === 'resolved' ? 'ÇÖZÜLDÜ' : 'AÇIK')}\n` +
                      `Tekrar Sayısı  : ${e.occurrence_count || 1} kez kaydedildi\n` +
                      `İlk Görülme    : ${firstStr}\n` +
                      `Son Görülme    : ${lastStr}\n` +
                      `Etkilenenler   : ${usersStr}\n` +
                      `Sürüm          : ${e.app_version || '-'}\n` +
                      `Platform       : ${e.platform || '-'}\n` +
-                     `Aktif Sekme    : ${e.active_tab || '-'}\n\n` +
+                     `Aktif Sekme    : ${e.active_tab || '-'}\n\n`;
+
+      if (ctx && Object.keys(ctx).length > 0) {
+        overview +=  `=======================================================\n` +
+                     `[SİSTEM VE ÇALIŞMA ZAMANI TANILARI]:\n` +
                      `=======================================================\n` +
+                     `RAM (RSS)      : ${ctx.rss_memory_mb ? ctx.rss_memory_mb + ' MB' : '-'}\n` +
+                     `Pencere Ortamı : ${ctx.window_system || '-'}\n` +
+                     `Masaüstü (DE)  : ${ctx.desktop_env || '-'}\n` +
+                     `Ekran DPI      : ${ctx.screen_dpi || '-'}\n` +
+                     `Thread Sayısı  : ${ctx.thread_count || '-'}\n` +
+                     `Python Sürümü  : ${ctx.python_version || '-'}\n\n`;
+
+        if (Array.isArray(ctx.breadcrumbs) && ctx.breadcrumbs.length > 0) {
+          overview += `=======================================================\n` +
+                      `[KULLANICI EYLEM AKIŞI (BREADCRUMBS - SON ${ctx.breadcrumbs.length} EYLEM)]:\n` +
+                      `=======================================================\n`;
+          ctx.breadcrumbs.forEach(b => {
+            const t = b.time_str || (b.timestamp ? new Date(b.timestamp * 1000).toLocaleTimeString('tr-TR') : '--:--:--');
+            overview += `[${t}] [${b.category || 'event'}] ${b.message || ''}\n`;
+          });
+          overview += `\n`;
+        }
+      }
+
+      overview +=    `=======================================================\n` +
                      `[PYTHON TRACEBACK]:\n` +
                      `=======================================================\n` +
                      `${e.traceback || 'Traceback bulunmuyor'}\n\n` +
@@ -2542,6 +2776,9 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
 
     function closeModal() {
       document.getElementById('detailModal').style.display = 'none';
+      currentModalError = null;
+      const btn = document.getElementById('btnModalStatus');
+      if (btn) btn.style.display = 'none';
     }
 
     function loadAll() {

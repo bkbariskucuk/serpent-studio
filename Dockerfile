@@ -12,6 +12,7 @@ RUN pip install --no-cache-dir -r /app/server/requirements.txt
 RUN groupadd -g 10001 serpent && \
     useradd -u 10001 -g serpent -m -s /bin/sh serpent
 
+COPY VERSION /app/VERSION
 COPY server/ /app/server/
 RUN chown -R serpent:serpent /app
 
