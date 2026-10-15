@@ -119,7 +119,7 @@ class Backend:
                     options['sslmode'] = 'verify-full'
                     options['sslrootcert'] = ca_file
                 else:
-                    options.setdefault('sslmode', 'require')
+                    raise ValueError('Remote PostgreSQL requires an authenticated CA certificate bundle.')
                 options['gssencmode'] = 'disable'
             options.setdefault('connect_timeout', 10)
             options.setdefault('application_name', 'serpent-control-plane')

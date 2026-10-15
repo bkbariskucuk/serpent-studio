@@ -15,6 +15,7 @@ import datetime
 import hashlib
 import hmac
 import http.server
+import ipaddress
 import json
 import logging
 import os
@@ -153,6 +154,45 @@ def verify_password(password: str, expected_hash: str, salt: str) -> bool:
         return hmac.compare_digest(computed, expected_hash)
     except (ValueError, TypeError):
         return False
+
+
+_DUMMY_SALT = "00" * 16
+_DUMMY_HASH = hashlib.pbkdf2_hmac("sha256", b"serpent_dummy_password", bytes.fromhex(_DUMMY_SALT), 100000).hex()
+
+
+def hash_token(token: str) -> str:
+    """Compute stable SHA-256 digest of session token for secure storage at rest."""
+    if not token or not isinstance(token, str):
+        return ""
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+class TelemetryRateLimiter:
+    """In-memory sliding window rate limiter to protect telemetry endpoints from spam and DoS."""
+
+    def __init__(self, max_requests: int = 30, window_seconds: float = 60.0) -> None:
+        self.max_requests = max_requests
+        self.window_seconds = window_seconds
+        self._lock = threading.Lock()
+        self._requests: Dict[str, List[float]] = {}
+
+    def is_rate_limited(self, key: str) -> bool:
+        now = time.time()
+        with self._lock:
+            timestamps = [t for t in self._requests.get(key, []) if now - t < self.window_seconds]
+            if len(timestamps) >= self.max_requests:
+                self._requests[key] = timestamps
+                return True
+            timestamps.append(now)
+            self._requests[key] = timestamps
+            return False
+
+    def reset_for_tests(self) -> None:
+        with self._lock:
+            self._requests.clear()
+
+
+TELEMETRY_RATE_LIMITER = TelemetryRateLimiter()
 
 
 def compute_error_fingerprint(exception_type: str, exception_message: str, traceback_str: str) -> str:
@@ -427,32 +467,39 @@ class Database:
 
     def create_session(self, user_id: int, username: str, client_version: str = "", platform: str = "") -> str:
         token = secrets.token_hex(24)
+        token_digest = hash_token(token)
         now = time.time()
         with self._lock, self._get_conn() as conn:
             cur = conn.cursor()
             cur.execute("""
                 INSERT INTO sessions (token, user_id, username, client_version, platform, created_at, last_heartbeat, is_revoked)
                 VALUES (?, ?, ?, ?, ?, ?, ?, 0)
-            """, (token, user_id, username, client_version, platform, now, now))
+            """, (token_digest, user_id, username, client_version, platform, now, now))
             conn.commit()
         return token
 
     def revoke_session(self, token: str) -> None:
+        if not token or not isinstance(token, str):
+            return
+        token_digest = hash_token(token)
         with self._lock, self._get_conn() as conn:
-            conn.execute("UPDATE sessions SET is_revoked = 1 WHERE token = ?", (token,))
+            conn.execute("UPDATE sessions SET is_revoked = 1 WHERE token = ? OR token = ?", (token_digest, token))
             conn.commit()
 
     def change_user_password(self, token: str, current_password: str, new_password: str) -> Tuple[bool, str]:
         """Atomically change the authenticated user's password and rotate all sessions."""
+        if not token or not isinstance(token, str):
+            return False, "Invalid session token."
         if len(new_password) < MIN_PASSWORD_LENGTH:
             return False, "New password must be at least 12 characters."
+        token_digest = hash_token(token)
         with self._lock, self._get_conn() as conn:
             if not self._backend.postgres:
                 conn.execute("BEGIN IMMEDIATE")
-            sql = "SELECT u.*, s.created_at AS session_created FROM users u JOIN sessions s ON s.user_id=u.id WHERE s.token=? AND s.is_revoked=0"
+            sql = "SELECT u.*, s.created_at AS session_created FROM users u JOIN sessions s ON s.user_id=u.id WHERE (s.token=? OR s.token=?) AND s.is_revoked=0"
             if self._backend.postgres:
                 sql += " FOR UPDATE OF u, s"
-            row = conn.execute(sql, (token,)).fetchone()
+            row = conn.execute(sql, (token_digest, token)).fetchone()
             if (not row or not row["is_active"] or (row["expires_at"] and row["expires_at"] < time.time())
                     or time.time() - row["session_created"] > SESSION_MAX_AGE
                     or not verify_password(current_password, row["password_hash"], row["salt"])):
@@ -461,43 +508,45 @@ class Database:
             conn.execute("UPDATE users SET password_hash=?, salt=? WHERE id=?", (hashed, salt, row["id"]))
             conn.execute("UPDATE sessions SET is_revoked=1 WHERE user_id=?", (row["id"],))
             replacement = secrets.token_hex(24)
+            replacement_digest = hash_token(replacement)
             now = time.time()
-            conn.execute("INSERT INTO sessions (token,user_id,username,created_at,last_heartbeat,is_revoked) VALUES (?,?,?,?,?,0)", (replacement, row["id"], row["username"], now, now))
+            conn.execute("INSERT INTO sessions (token,user_id,username,created_at,last_heartbeat,is_revoked) VALUES (?,?,?,?,?,0)", (replacement_digest, row["id"], row["username"], now, now))
             conn.commit()
             return True, replacement
 
     def verify_and_touch_session(self, token: str) -> Tuple[bool, Optional[Dict[str, Any]]]:
-        if not token:
+        if not token or not isinstance(token, str):
             return False, None
+        token_digest = hash_token(token)
         with self._lock, self._get_conn() as conn:
             cur = conn.cursor()
             cur.execute("""
                 SELECT s.*, u.is_active, u.role, u.expires_at, u.restricted_panels
                 FROM sessions s
                 JOIN users u ON s.user_id = u.id
-                WHERE s.token = ? AND s.is_revoked = 0
-            """, (token,))
+                WHERE (s.token = ? OR s.token = ?) AND s.is_revoked = 0
+            """, (token_digest, token))
             row = cur.fetchone()
             if not row:
                 return False, None
 
             data = dict(row)
             if time.time() - data["created_at"] > SESSION_MAX_AGE:
-                cur.execute("UPDATE sessions SET is_revoked = 1 WHERE token = ?", (token,))
+                cur.execute("UPDATE sessions SET is_revoked = 1 WHERE token = ? OR token = ?", (token_digest, token))
                 conn.commit()
                 return False, None
             if not data.get("is_active"):
-                cur.execute("UPDATE sessions SET is_revoked = 1 WHERE token = ?", (token,))
+                cur.execute("UPDATE sessions SET is_revoked = 1 WHERE token = ? OR token = ?", (token_digest, token))
                 conn.commit()
                 return False, None
 
             expires_at = data.get("expires_at")
             if expires_at and time.time() > expires_at:
-                cur.execute("UPDATE sessions SET is_revoked = 1 WHERE token = ?", (token,))
+                cur.execute("UPDATE sessions SET is_revoked = 1 WHERE token = ? OR token = ?", (token_digest, token))
                 conn.commit()
                 return False, None
 
-            cur.execute("UPDATE sessions SET last_heartbeat = ? WHERE token = ?", (time.time(), token))
+            cur.execute("UPDATE sessions SET last_heartbeat = ? WHERE token = ? OR token = ?", (time.time(), token_digest, token))
             conn.commit()
             return True, data
 
@@ -746,11 +795,37 @@ class ControlPlaneHandler(http.server.BaseHTTPRequestHandler):
         logger.debug("Control-plane HTTP request handled")
 
     def _client_ip(self) -> str:
-        forwarded = self.headers.get("X-Forwarded-For", "")
-        if forwarded:
-            return forwarded.split(",")[0].strip()
-        if self.client_address:
-            return str(self.client_address[0])
+        peer_ip_str = ""
+        is_peer_trusted = False
+        if self.client_address and len(self.client_address) > 0:
+            try:
+                peer_obj = ipaddress.ip_address(str(self.client_address[0]))
+                peer_ip_str = str(peer_obj)
+                # Loopback (127.0.0.1, ::1) is trusted local reverse proxy (e.g. Nginx, Render proxy)
+                is_peer_trusted = peer_obj.is_loopback
+            except ValueError:
+                peer_ip_str = str(self.client_address[0])
+
+        # Cloudflare / trusted edge headers if peer is trusted proxy
+        if is_peer_trusted:
+            for header in ("CF-Connecting-IP", "True-Client-IP"):
+                val = self.headers.get(header, "").strip()
+                if val:
+                    try:
+                        return str(ipaddress.ip_address(val))
+                    except ValueError:
+                        pass
+            forwarded = self.headers.get("X-Forwarded-For", "")
+            if forwarded:
+                parts = [p.strip() for p in forwarded.split(",") if p.strip()]
+                for p in reversed(parts):
+                    try:
+                        return str(ipaddress.ip_address(p))
+                    except ValueError:
+                        continue
+
+        if peer_ip_str:
+            return peer_ip_str
         return "127.0.0.1"
 
     def _get_allowed_origin(self) -> Optional[str]:
@@ -772,6 +847,10 @@ class ControlPlaneHandler(http.server.BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(payload)))
         self.send_header("Cache-Control", "no-store")
         self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("X-Frame-Options", "DENY")
+        self.send_header("Referrer-Policy", "strict-origin-when-cross-origin")
+        self.send_header("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+        self.send_header("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none';")
         allowed_origin = self._get_allowed_origin()
         if allowed_origin:
             self.send_header("Access-Control-Allow-Origin", allowed_origin)
@@ -791,6 +870,9 @@ class ControlPlaneHandler(http.server.BaseHTTPRequestHandler):
         self.send_header("Cache-Control", "no-store")
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("X-Frame-Options", "DENY")
+        self.send_header("Referrer-Policy", "strict-origin-when-cross-origin")
+        self.send_header("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+        self.send_header("Content-Security-Policy", "default-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none';")
         self.end_headers()
         self.wfile.write(payload)
 
@@ -942,7 +1024,13 @@ class ControlPlaneHandler(http.server.BaseHTTPRequestHandler):
             platform = str(body.get("platform", ""))
 
             user = self.db.get_user(username)
-            if not user or not verify_password(password, user["password_hash"], user["salt"]):
+            valid_pw = False
+            if user:
+                valid_pw = verify_password(password, user["password_hash"], user["salt"])
+            else:
+                verify_password(password, _DUMMY_HASH, _DUMMY_SALT)
+
+            if not user or not valid_pw:
                 locked_now, wait_time = LOGIN_RATE_LIMITER.record_failure(client_ip)
                 if locked_now:
                     self._send_json(429, {
@@ -1023,7 +1111,9 @@ class ControlPlaneHandler(http.server.BaseHTTPRequestHandler):
             return
 
         if path in ("/v1/auth/logout", "/admin/api/logout"):
-            self.db.revoke_session(self._get_bearer_token())
+            token_to_revoke = self._get_bearer_token() or str(body.get("token", "")).strip()
+            if token_to_revoke:
+                self.db.revoke_session(token_to_revoke)
             self._send_json(200, {"status": "ok"})
             return
 
@@ -1035,6 +1125,10 @@ class ControlPlaneHandler(http.server.BaseHTTPRequestHandler):
                 self._send_json(401, {"status": "error", "message": "A valid session is required for telemetry."})
                 return
             username = session_data["username"]
+
+            if TELEMETRY_RATE_LIMITER.is_rate_limited(username):
+                self._send_json(429, {"status": "error", "message": "Telemetry rate limit exceeded. Please slow down."})
+                return
 
             client_count = int(body.get("client_occurrence_count", 1) or 1)
             rep_id = self.db.record_error(
@@ -1060,6 +1154,10 @@ class ControlPlaneHandler(http.server.BaseHTTPRequestHandler):
                 self._send_json(401, {"status": "error", "message": "A valid session is required for telemetry."})
                 return
             username = session_data["username"]
+
+            if TELEMETRY_RATE_LIMITER.is_rate_limited(username):
+                self._send_json(429, {"status": "error", "message": "Telemetry rate limit exceeded. Please slow down."})
+                return
 
             s_id = self.db.record_script(
                 username=username,
@@ -1087,9 +1185,15 @@ class ControlPlaneHandler(http.server.BaseHTTPRequestHandler):
             u = str(body.get("username", "")).strip().lower()
             p = str(body.get("password", ""))
             user = self.db.get_user(u)
+            valid_pw = False
+            if user:
+                valid_pw = verify_password(p, user["password_hash"], user["salt"])
+            else:
+                verify_password(p, _DUMMY_HASH, _DUMMY_SALT)
+
             if (user and user["role"] == "administrator" and user["is_active"]
                     and (not user["expires_at"] or user["expires_at"] > time.time())
-                    and verify_password(p, user["password_hash"], user["salt"])):
+                    and valid_pw):
                 LOGIN_RATE_LIMITER.record_success(client_ip)
                 adm_token = self.db.create_session(user["id"], user["username"], "web-admin", "browser")
                 self._send_json(200, {"status": "ok", "token": adm_token, "username": user["username"]})
@@ -2531,15 +2635,52 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
     }
 
     function resetPass(username) {
-      const newP = prompt(`'${username}' için yeni şifreyi giriniz (en az 6 karakter):`);
-      if (!newP) return;
-      apiCall('/admin/api/users/reset-password', 'POST', { username, password: newP }).then(res => {
-        if (res.status === 'ok') {
-          showToast(`'${username}' şifresi başarıyla yenilendi.`, "success");
-        } else {
-          showToast("Şifre güncellenemedi. En az 12 karakter kullanın.", "error");
+      if (document.getElementById('adminResetPassDialog')) return;
+      const dialog = document.createElement('dialog');
+      dialog.id = 'adminResetPassDialog';
+      dialog.style.cssText = 'margin:auto;padding:24px;background:var(--bg-surface);color:var(--text-main);border:1px solid var(--border-stone-hover);border-radius:16px;box-shadow:0 20px 60px rgba(0,0,0,0.85);max-width:380px;width:90%';
+      const form = document.createElement('form');
+      const title = document.createElement('h3');
+      title.textContent = `'${username}' İçin Yeni Şifre`;
+      title.style.cssText = 'font-size:16px;margin-bottom:12px;color:#fff;text-align:center;font-weight:600;';
+      const desc = document.createElement('p');
+      desc.textContent = 'En az 12 karakter içeren güçlü bir şifre giriniz:';
+      desc.style.cssText = 'font-size:12px;color:var(--text-muted);margin-bottom:12px;text-align:center;';
+      const password = document.createElement('input');
+      password.type = 'password'; password.placeholder = 'Yeni şifre (min 12 karakter)'; password.autocomplete = 'new-password'; password.required = true;
+      password.style.cssText = 'width:100%;margin-bottom:12px;display:block;';
+      const error = document.createElement('p'); error.setAttribute('role', 'alert');
+      error.style.cssText = 'color:var(--terracotta);font-size:12px;margin-bottom:12px;min-height:16px;text-align:center;';
+      const btnGroup = document.createElement('div');
+      btnGroup.style.cssText = 'display:flex;gap:8px;justify-content:flex-end;';
+      const cancelBtn = document.createElement('button');
+      cancelBtn.type = 'button'; cancelBtn.className = 'btn'; cancelBtn.textContent = 'İptal';
+      cancelBtn.style.cssText = 'background:transparent;border:1px solid var(--border-stone);';
+      cancelBtn.onclick = () => { dialog.close(); dialog.remove(); };
+      const submit = document.createElement('button');
+      submit.type = 'submit'; submit.className = 'btn'; submit.textContent = 'Kaydet';
+      btnGroup.append(cancelBtn, submit);
+      form.append(title, desc, password, error, btnGroup);
+      form.addEventListener('submit', event => {
+        event.preventDefault();
+        const newP = password.value;
+        if (!newP || newP.length < 12) {
+          error.textContent = 'Şifre en az 12 karakter olmalıdır.';
+          return;
         }
+        submit.disabled = true; error.textContent = '';
+        apiCall('/admin/api/users/reset-password', 'POST', { username, password: newP }).then(res => {
+          if (res.status === 'ok') {
+            dialog.close(); dialog.remove();
+            showToast(`'${username}' şifresi başarıyla yenilendi.`, "success");
+          } else {
+            error.textContent = res.message || 'Şifre güncellenemedi.';
+          }
+        }).catch(err => {
+          error.textContent = err.message || 'Bağlantı hatası.';
+        }).finally(() => { submit.disabled = false; });
       });
+      dialog.append(form); document.body.append(dialog); dialog.showModal(); password.focus();
     }
 
     function deleteUser(username) {

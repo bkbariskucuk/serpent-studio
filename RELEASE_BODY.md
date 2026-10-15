@@ -1,6 +1,6 @@
-# Serpent Studio v1.2.70.56 (Alpha)
+# Serpent Studio v1.2.70.57 (Alpha)
 
-[Serpent.Studio.AppImage indir](https://github.com/bkbariskucuk/serpent-studio/releases/download/v1.2.70.56/Serpent.Studio.AppImage)
+[Serpent.Studio.AppImage indir](https://github.com/bkbariskucuk/serpent-studio/releases/download/v1.2.70.57/Serpent.Studio.AppImage)
 
 ```bash
 chmod +x Serpent.Studio.AppImage
@@ -9,16 +9,15 @@ chmod +x Serpent.Studio.AppImage
 
 Linux x86_64 (Ubuntu 20.04 / Debian 11 ve üzeri). FUSE bulunmayan sistemlerde `--appimage-extract-and-run` parametresiyle çalıştırılabilir. Python veya ek bağımlılık kurulumu gerektirmez.
 
-## v1.2.70.56 ile Gelen İyileştirmeler
+## v1.2.70.57 ile Gelen Güvenlik İyileştirmeleri ve Zafiyet Kapatmaları
 
-* **Simülasyon Hata Ekranından Konsola Işınlanma:** Simülasyon başarısız olduğunda veya sıfır dışı çıkış kodu ürettiğinde "Konsolu İncele" butonu ile kullanıcı doğrudan editör sayfasına yönlendirilir; alt konsol çekmecesi otomatik açılır, bağımsız penceredeyse öne getirilir, log filtresi hatalara odaklanır ve komut penceresi odaklanır.
-* **Kalıcı Çok Segmentli Mesafe Ölçüm Aracı:** Mesafe aracı açma/kapama (toggle) modunda çalışır; ardışık tıklamalarla birden fazla segment sahnede kalıcı olarak ölçülür ve HUD bilgi kartlarıyla sunulur. Ctrl+Z / Ctrl+Y ile segmentler geri/ileri alınabilir; sağ tık aktif çizgiyi iptal eder veya segmentleri temizler.
-* **Kanvas İnceleme/Kaydırma vs. Boyama Modu (Pan & Inspect vs. Paint Mode):** Kanvaslar varsayılan olarak serbest gezinme (Pan) modunda açılır. Sol tık ile sürükleme hücreleri boyamaz, açık el imleci ile serbestçe pan yapar. Başlık çubuğundaki Boyama butonu ile boyama moduna geçilerek pin ve demet yerleşimi yapılır.
-* **Parametre Değişiminde Fare Tekerlek Güvenliği:** Yan paneldeki sayısal spinbox bileşenleri (`ModernSpinBox`) yalnızca metin kutusu açıkça tıklandığında ve odaklandığında fare tekerleği ile değer değiştirir; sayfa kaydırılırken değerlerin kazara bozulması engellendi.
-* **Obsidian Konsol Teması ve Görünüm Ayarları:** Koyu mod konsolu derin siyah/obsidyen `#05080E` paletine geçirildi. Konsol araç çubuğuna SVG ayarlar ikonu ile canlı önizlemeli `ConsoleAppearanceDialog` eklendi; Deep Navy, Charcoal, Obsidian, Pure Light önayarları ve özel renk seçimi `QSettings` ile kalıcı kılındı.
-* **Çekirdek Şekli Temizliği:** Manuel tasarım açılır listesinden `Unknown` seçeneği kaldırıldı; yalnızca tanımlanamayan bir latis içe aktarıldığında dinamik uyarı olarak gösterilip geçerli seçimde otomatik silinir.
-* **Termohidrolik (TH) Gruplarında Doğal Hiyerarşik Sıralama:** Termohidrolik grupları ana demet aileleri altında toplanarak doğal alfabetik-sayısal sıralama (A1 -> A2 -> A10) ile hiyerarşik yapıya kavuşturuldu.
-* **Sıfır Emoji ve Çift Dilli (i18n) Bütünlük:** Arayüz pencerelerindeki, araç çubuklarındaki ve durum bildirimlerindeki tüm emojiler temizlendi; saf vektörel SVG ikonlar ve tam Türkçe/İngilizce yerelleştirme entegre edildi.
+* **Token Hashleme (Token Hashing at Rest):** Oturum token'ları veri tabanında (SQLite / PostgreSQL) artık düz metin yerine SHA-256 özetiyle saklanır. Olası veri tabanı sızıntılarında token'lar saldırganlar tarafından doğrudan taklit edilemez; geriye dönük sorgu desteği ile mevcut oturumlar kesilmeden güvenliğe kavuşturuldu.
+* **Fail-Closed TLS Güvencesi:** Uzak PostgreSQL bağlantılarında işletim sistemi CA sertifika demeti bulunamadığında sessizce güvensiz bağlantıya (`sslmode=require`) düşülmeyip fail-closed prensibiyle bağlantı reddedilir; böylece ortadaki adam (MITM) saldırıları engellendi.
+* **Zamanlama Analizi (Timing Attack) Koruması:** `/v1/auth/login` ve `/admin/api/login` uç noktalarında var olmayan kullanıcı adları için de sahte PBKDF2 doğrulaması (`_DUMMY_HASH`) çalıştırılarak yanıt sürelerinin eşitlenmesi sağlandı; kullanıcı adı keşfi (enumeration) önlendi.
+* **İstemci IP Sahteciliği (IP Spoofing) Savunması:** `_client_ip` çözümleyicisi, ters vekil (reverse proxy) başlıklarını (`X-Forwarded-For`, `CF-Connecting-IP`, `True-Client-IP`) yalnızca doğrudan bağlantı yerel güvenilir bir proxy (loopback) olduğunda işler; doğrudan dış istemcilerin sahte başlıklarla hız sınırlarını (rate limiting) baypas etmesi önlendi.
+* **Telemetri DoS & Hız Sınırlandırması (Telemetry Rate Limiter):** `/v1/telemetry/errors` ve `/v1/telemetry/scripts` uç noktalarına kullanıcı bazlı kayan pencere hız sınırlayıcı entegre edilerek kötü niyetli veya döngüye girmiş istemcilerin veritabanını şişirmesi engellendi.
+* **24 Saatlik Çevrimdışı Kullanım Toleransı (Offline Grace Period):** Kullanıcı aktif bile olsa sunucuyla 24 saatten uzun süre iletişim kurulamazsa oturum kilitlenir; böylece ağ bağlantısını keserek yönetici askıya alma/kill-switch kilidinden süresiz kaçınma açığı kapatıldı.
+* **Güvenlik Başlıkları (Security Headers) ve Web Yönetim Paneli Şifre Güvenliği:** Tüm JSON ve HTML yanıtlarına `Strict-Transport-Security`, `Content-Security-Policy`, `X-Content-Type-Options`, `X-Frame-Options` başlıkları eklendi. Web yönetim panelinde düz metin `prompt()` yerine şifreyi maskeleyen güvenli `<dialog>` modalı ve en az 12 karakterlik şifre kuralı getirildi. `tools/manage_users.py` araçlarındaki import hatası düzeltildi ve 12 karakter kuralı bağlandı.
 
 ## İndirme ve Doğrulama
 
