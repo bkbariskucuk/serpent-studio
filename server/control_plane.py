@@ -62,7 +62,7 @@ def _load_server_version() -> str:
                         return ver
             except Exception:
                 pass
-    return "v1.2.70.56"
+    return "v1.2.71.58"
 
 
 CURRENT_SERVER_VERSION = _load_server_version()
@@ -514,7 +514,7 @@ class Database:
             conn.commit()
             return True, replacement
 
-    def verify_and_touch_session(self, token: str) -> Tuple[bool, Optional[Dict[str, Any]]]:
+    def verify_and_touch_session(self, token: str, client_version: str = "", platform: str = "") -> Tuple[bool, Optional[Dict[str, Any]]]:
         if not token or not isinstance(token, str):
             return False, None
         token_digest = hash_token(token)
@@ -546,8 +546,32 @@ class Database:
                 conn.commit()
                 return False, None
 
-            cur.execute("UPDATE sessions SET last_heartbeat = ? WHERE token = ? OR token = ?", (time.time(), token_digest, token))
+            now = time.time()
+            if client_version and platform:
+                cur.execute("""
+                    UPDATE sessions
+                    SET last_heartbeat = ?, client_version = ?, platform = ?
+                    WHERE token = ? OR token = ?
+                """, (now, client_version, platform, token_digest, token))
+            elif client_version:
+                cur.execute("""
+                    UPDATE sessions
+                    SET last_heartbeat = ?, client_version = ?
+                    WHERE token = ? OR token = ?
+                """, (now, client_version, token_digest, token))
+            elif platform:
+                cur.execute("""
+                    UPDATE sessions
+                    SET last_heartbeat = ?, platform = ?
+                    WHERE token = ? OR token = ?
+                """, (now, platform, token_digest, token))
+            else:
+                cur.execute("UPDATE sessions SET last_heartbeat = ? WHERE token = ? OR token = ?", (now, token_digest, token))
             conn.commit()
+            if client_version:
+                data["client_version"] = client_version
+            if platform:
+                data["platform"] = platform
             return True, data
 
     def record_error(
@@ -953,7 +977,8 @@ class ControlPlaneHandler(http.server.BaseHTTPRequestHandler):
             return
 
         if path == "/admin":
-            self._send_html(200, ADMIN_DASHBOARD_HTML)
+            html = ADMIN_DASHBOARD_HTML.replace("__CURRENT_SERVER_VERSION__", CURRENT_SERVER_VERSION)
+            self._send_html(200, html)
             return
 
         # Admin REST Endpoints
@@ -1076,7 +1101,9 @@ class ControlPlaneHandler(http.server.BaseHTTPRequestHandler):
         # Client Heartbeat Endpoint
         if path == "/v1/telemetry/heartbeat":
             token = self._get_bearer_token() or str(body.get("token", ""))
-            valid, session_data = self.db.verify_and_touch_session(token)
+            client_version = str(body.get("client_version") or "").strip()
+            platform = str(body.get("platform") or "").strip()
+            valid, session_data = self.db.verify_and_touch_session(token, client_version=client_version, platform=platform)
             if not valid or not session_data:
                 self._send_json(403, {
                     "status": "suspended",
@@ -1956,7 +1983,7 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
           <h1>Serpent Studio <span class="badge">Yönetim ve Telemetri</span></h1>
           <div style="margin-top: 4px; display: flex; align-items: center; gap: 8px;">
             <span class="status-pill"><span class="pulse-dot"></span> Canlı Bulut (Render + Neon PostgreSQL)</span>
-            <span class="badge" style="background: rgba(56, 189, 248, 0.12); color: #38BDF8; border: 1px solid rgba(56, 189, 248, 0.3);">v1.2.70.56</span>
+            <span class="badge" style="background: rgba(56, 189, 248, 0.12); color: #38BDF8; border: 1px solid rgba(56, 189, 248, 0.3);">__CURRENT_SERVER_VERSION__</span>
           </div>
         </div>
       </div>
@@ -2260,6 +2287,7 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
   </div>
 
   <script>
+    const currentServerVersion = '__CURRENT_SERVER_VERSION__';
     const appStorage = (typeof sessionStorage !== 'undefined') ? sessionStorage : {
       getItem: function() { return null; },
       setItem: function() {},
@@ -2495,7 +2523,8 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
         verBadge.style.fontFamily = 'monospace';
         if (u.client_version) {
           verBadge.textContent = u.client_version;
-          if (u.client_version.startsWith('v1.2.70')) {
+          const isLatest = currentServerVersion && (u.client_version === currentServerVersion || u.client_version.startsWith(currentServerVersion.split('.').slice(0, 3).join('.')));
+          if (isLatest) {
             verBadge.style.backgroundColor = 'rgba(56, 189, 248, 0.12)';
             verBadge.style.color = '#38BDF8';
             verBadge.style.border = '1px solid rgba(56, 189, 248, 0.3)';
