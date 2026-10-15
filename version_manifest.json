@@ -1,12 +1,12 @@
 {
-  "latest_version": "v1.2.70.57",
+  "latest_version": "v1.2.71.58",
   "min_supported_version": "v0.2.50.00",
   "mandatory": false,
   "release_date": "2026-10-15",
-  "release_title": "Serpent Studio v1.2.70.57",
-  "release_notes": "Sunucu ve İstemci Güvenlik Sertleştirmesi (Security Hardening), Token Hashleme ve Zafiyet Giderme",
-  "sha256": "cdc9555cc01039917420ad024c9eb3a0ee8664a0eb92d5806cc2ae7304244869",
-  "file_size_bytes": 140093944,
-  "download_url": "https://github.com/bkbariskucuk/serpent-studio/releases/download/v1.2.70.57/Serpent.Studio.AppImage",
-  "zsync_url": "https://github.com/bkbariskucuk/serpent-studio/releases/download/v1.2.70.57/Serpent.Studio.AppImage.zsync"
+  "release_title": "Serpent Studio v1.2.71.58",
+  "release_notes": "Serpent Studio v1.2.71.58 - Concentric Layer Designer & Control Plane Version Tracking Fix",
+  "sha256": "78a6fc902c7dfd284b850b3c12b5ad382b32fb6c19cd39ee617c524a7f2912e3",
+  "file_size_bytes": 140270072,
+  "download_url": "https://github.com/bkbariskucuk/serpent-studio/releases/download/v1.2.71.58/Serpent.Studio.AppImage",
+  "zsync_url": "https://github.com/bkbariskucuk/serpent-studio/releases/download/v1.2.71.58/Serpent.Studio.AppImage.zsync"
 }
