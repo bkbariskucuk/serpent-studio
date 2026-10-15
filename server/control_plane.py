@@ -272,6 +272,17 @@ class Database:
             if "status" not in err_cols:
                 cursor.execute("ALTER TABLE error_reports ADD COLUMN status TEXT DEFAULT 'open'")
 
+            # Backfill any existing error_reports rows that have NULL fingerprint or NULL status
+            cursor.execute("UPDATE error_reports SET status = 'open' WHERE status IS NULL OR status = ''")
+            cursor.execute("SELECT id, exception_type, exception_message, traceback FROM error_reports WHERE fingerprint IS NULL OR fingerprint = ''")
+            for nr in cursor.fetchall():
+                calc_fp = compute_error_fingerprint(
+                    nr["exception_type"] or "",
+                    nr["exception_message"] or "",
+                    nr["traceback"] or ""
+                )
+                cursor.execute("UPDATE error_reports SET fingerprint = ? WHERE id = ?", (calc_fp, nr["id"]))
+
             if bootstrap_admin:
                 self._bootstrap_admin(cursor)
             conn.commit()
@@ -394,15 +405,19 @@ class Database:
             cur = conn.cursor()
             cur.execute("""
                 SELECT u.id, u.username, u.role, u.display_name, u.is_active, u.created_at, u.expires_at, u.restricted_panels,
-                       MAX(s.last_heartbeat) as last_seen, MAX(s.client_version) as client_version
+                       MAX(s.last_heartbeat) as last_seen,
+                       (SELECT s2.client_version FROM sessions s2 WHERE s2.user_id = u.id AND s2.client_version IS NOT NULL AND s2.client_version != '' ORDER BY s2.last_heartbeat DESC LIMIT 1) as client_version,
+                       (SELECT e.app_version FROM error_reports e WHERE e.username = u.username AND e.app_version IS NOT NULL AND e.app_version != '' ORDER BY e.timestamp DESC LIMIT 1) as error_version
                 FROM users u
-                LEFT JOIN sessions s ON u.id = s.user_id AND s.is_revoked = 0
-                GROUP BY u.id
+                LEFT JOIN sessions s ON u.id = s.user_id
+                GROUP BY u.id, u.username, u.role, u.display_name, u.is_active, u.created_at, u.expires_at, u.restricted_panels
                 ORDER BY u.created_at DESC
             """)
             users = []
             for r in cur.fetchall():
                 d = dict(r)
+                if not d.get("client_version"):
+                    d["client_version"] = d.get("error_version") or ""
                 try:
                     d["restricted_panels"] = json.loads(d.get("restricted_panels") or "[]")
                 except Exception:
@@ -549,10 +564,34 @@ class Database:
             conn.commit()
             return row_id
 
-    def set_error_status(self, fingerprint: str, status: str = "resolved") -> bool:
+    def set_error_status(self, fingerprint: str = "", status: str = "resolved", error_id: Optional[int] = None) -> bool:
         with self._lock, self._get_conn() as conn:
             cur = conn.cursor()
-            cur.execute("UPDATE error_reports SET status = ? WHERE fingerprint = ?", (status, fingerprint))
+            updated = False
+            if fingerprint:
+                cur.execute("UPDATE error_reports SET status = ? WHERE fingerprint = ?", (status, fingerprint))
+                if cur.rowcount > 0:
+                    updated = True
+
+            if error_id is not None:
+                cur.execute("UPDATE error_reports SET status = ? WHERE id = ?", (status, error_id))
+                if cur.rowcount > 0:
+                    updated = True
+
+            # Backfill any error records with NULL/empty fingerprint
+            cur.execute("SELECT id, exception_type, exception_message, traceback FROM error_reports WHERE fingerprint IS NULL OR fingerprint = ''")
+            null_rows = [dict(r) for r in cur.fetchall()]
+            for nr in null_rows:
+                calc_fp = compute_error_fingerprint(
+                    nr.get("exception_type", "") or "",
+                    nr.get("exception_message", "") or "",
+                    nr.get("traceback", "") or ""
+                )
+                cur.execute("UPDATE error_reports SET fingerprint = ? WHERE id = ?", (calc_fp, nr["id"]))
+                if fingerprint and calc_fp == fingerprint:
+                    cur.execute("UPDATE error_reports SET status = ? WHERE id = ?", (status, nr["id"]))
+                    updated = True
+
             conn.commit()
             return True
 
@@ -593,9 +632,6 @@ class Database:
                 else:
                     r["call_site"] = r.get("active_tab") or "-"
 
-            if status_filter and status_filter != "all":
-                rows = [r for r in rows if r.get("status") == status_filter]
-
             if unique_only:
                 grouped: Dict[str, Dict[str, Any]] = {}
                 for r in rows:
@@ -620,8 +656,13 @@ class Database:
                                 grouped[fp]["users"].append(u)
 
                 res = list(grouped.values())
+                if status_filter and status_filter != "all":
+                    res = [r for r in res if r.get("status") == status_filter]
                 res.sort(key=lambda x: x.get("last_seen", x.get("timestamp", 0)), reverse=True)
                 return res
+
+            if status_filter and status_filter != "all":
+                rows = [r for r in rows if r.get("status") == status_filter]
 
             return rows
 
@@ -1122,15 +1163,20 @@ class ControlPlaneHandler(http.server.BaseHTTPRequestHandler):
 
             if path == "/admin/api/errors/status":
                 fp = str(body.get("fingerprint", "")).strip()
+                err_id = body.get("id")
+                try:
+                    err_id = int(err_id) if err_id is not None else None
+                except Exception:
+                    err_id = None
                 new_status = str(body.get("status", "resolved")).strip().lower()
-                if not fp:
-                    self._send_json(400, {"status": "error", "message": "Missing fingerprint."})
+                if not fp and err_id is None:
+                    self._send_json(400, {"status": "error", "message": "Missing fingerprint or id."})
                     return
                 if new_status not in ("open", "resolved", "ignored"):
                     self._send_json(400, {"status": "error", "message": "Invalid status. Must be open, resolved, or ignored."})
                     return
-                ok = self.db.set_error_status(fp, new_status)
-                self._send_json(200 if ok else 400, {"status": "ok" if ok else "error", "status": new_status})
+                ok = self.db.set_error_status(fingerprint=fp, status=new_status, error_id=err_id)
+                self._send_json(200 if ok else 400, {"status": "ok" if ok else "error", "status": new_status, "fingerprint": fp, "id": err_id})
                 return
 
         self._send_json(404, {"status": "error", "message": "Endpoint not found."})
@@ -1946,13 +1992,14 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
                 <th>İsim</th>
                 <th>Rol / Keyword</th>
                 <th>Durum</th>
+                <th>Son Sürüm</th>
                 <th>Panel Kısıtları</th>
                 <th>Son Görülme</th>
                 <th>İşlemler</th>
               </tr>
             </thead>
             <tbody id="usersTableBody">
-              <tr><td colspan="7" style="text-align: center; color: var(--text-muted); padding: 20px;">Yükleniyor...</td></tr>
+              <tr><td colspan="8" style="text-align: center; color: var(--text-muted); padding: 20px;">Yükleniyor...</td></tr>
             </tbody>
           </table>
         </div>
@@ -2264,7 +2311,16 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
       const elUCount = document.getElementById('statUsersCount');
       if (elUCount) elUCount.textContent = totalUsers;
       const elUSub = document.getElementById('statUsersSub');
-      if (elUSub) elUSub.textContent = `${activeUsers} Aktif · ${suspendedUsers} Askıda`;
+      if (elUSub) {
+        const verMap = {};
+        usersCache.forEach(u => {
+          const v = u.client_version || 'Bilinmiyor';
+          verMap[v] = (verMap[v] || 0) + 1;
+        });
+        const vParts = Object.entries(verMap).map(([ver, cnt]) => `${ver}: ${cnt}`);
+        const vText = vParts.length ? ' · Sürümler: ' + vParts.join(', ') : '';
+        elUSub.textContent = `${activeUsers} Aktif · ${suspendedUsers} Askıda${vText}`;
+      }
       const elRCount = document.getElementById('statRestrictedCount');
       if (elRCount) elRCount.textContent = restrictedUsers;
       
@@ -2307,7 +2363,7 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
       const tbody = document.getElementById('usersTableBody');
       tbody.innerHTML = '';
       if (!list.length) {
-        tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding:24px; color:var(--text-muted);">Kayıtlı kullanıcı bulunamadı.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; padding:24px; color:var(--text-muted);">Kayıtlı kullanıcı bulunamadı.</td></tr>';
         return;
       }
       list.forEach(u => {
@@ -2323,6 +2379,33 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
         const state = textCell(tr, isActive ? 'Aktif' : 'Askıya Alındı');
         state.style.color = isActive ? 'var(--pine-light)' : 'var(--terracotta)';
         state.style.fontWeight = '600';
+
+        // Son Sürüm (col 5)
+        const verCell = textCell(tr, '');
+        const verBadge = document.createElement('span');
+        verBadge.style.display = 'inline-block';
+        verBadge.style.padding = '2px 8px';
+        verBadge.style.borderRadius = '99px';
+        verBadge.style.fontWeight = '600';
+        verBadge.style.fontSize = '11px';
+        verBadge.style.fontFamily = 'monospace';
+        if (u.client_version) {
+          verBadge.textContent = u.client_version;
+          if (u.client_version.startsWith('v1.2.70')) {
+            verBadge.style.backgroundColor = 'rgba(56, 189, 248, 0.12)';
+            verBadge.style.color = '#38BDF8';
+            verBadge.style.border = '1px solid rgba(56, 189, 248, 0.3)';
+          } else {
+            verBadge.style.backgroundColor = 'rgba(245, 158, 11, 0.12)';
+            verBadge.style.color = '#F59E0B';
+            verBadge.style.border = '1px solid rgba(245, 158, 11, 0.3)';
+          }
+        } else {
+          verBadge.textContent = 'Bilinmiyor';
+          verBadge.style.color = 'var(--text-muted)';
+        }
+        verCell.appendChild(verBadge);
+
         const permissions = textCell(tr, rPanels.length ? rPanels.length + ' Panel Kısıtlı' : 'Tüm Paneller Açık');
         permissions.title = rPanels.join(', ');
         permissions.style.color = rPanels.length ? 'var(--ochre-light)' : 'var(--text-muted)';
@@ -2549,6 +2632,12 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
         statusBadge.style.borderRadius = '99px';
         statusBadge.style.fontWeight = '600';
         statusBadge.style.fontSize = '11px';
+        statusBadge.style.cursor = 'pointer';
+        statusBadge.title = isResolved ? 'Tekrar açmak için tıklayın' : 'Çözüldü olarak işaretlemek için tıklayın';
+        statusBadge.onclick = (ev) => {
+          ev.stopPropagation();
+          toggleErrorStatusDirect(e, isResolved ? 'open' : 'resolved');
+        };
         if (isResolved) {
           statusBadge.style.backgroundColor = 'var(--pine-subtle)';
           statusBadge.style.color = 'var(--pine-light)';
@@ -2616,26 +2705,50 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
 
         textCell(tr, e.active_tab || '-');
         textCell(tr, e.app_version || '-');
-        actionButton(textCell(tr, ''), 'Detay İncele', () => showTraceback(e), 'btn-secondary');
+        const actionTd = textCell(tr, '');
+        actionTd.style.whiteSpace = 'nowrap';
+        actionButton(actionTd, isResolved ? 'Tekrar Aç' : '✓ Çözüldü', () => toggleErrorStatusDirect(e, isResolved ? 'open' : 'resolved'), isResolved ? 'btn-warning' : 'btn-success');
+        actionButton(actionTd, 'Detay İncele', () => showTraceback(e), 'btn-secondary');
         tbody.appendChild(tr);
       });
     }
 
-    function toggleCurrentModalErrorStatus() {
-      if (!currentModalError || !currentModalError.fingerprint) return;
-      const newStatus = (currentModalError.status === 'resolved') ? 'open' : 'resolved';
-      apiCall('/admin/api/errors/status', 'POST', {
-        fingerprint: currentModalError.fingerprint,
-        status: newStatus
-      }).then(res => {
+    function toggleErrorStatusDirect(e, targetStatus) {
+      if (!e) return;
+      const payload = { status: targetStatus };
+      if (e.fingerprint) payload.fingerprint = e.fingerprint;
+      if (e.id != null) payload.id = e.id;
+      apiCall('/admin/api/errors/status', 'POST', payload).then(res => {
         if (res.status === 'ok') {
-          currentModalError.status = newStatus;
-          showToast(newStatus === 'resolved' ? "Hata çözüldü olarak işaretlendi!" : "Hata yeniden açık duruma getirildi.", "success");
-          updateModalStatusButton(newStatus);
+          e.status = targetStatus;
+          showToast(targetStatus === 'resolved' ? "Hata çözüldü olarak işaretlendi!" : "Hata yeniden açık duruma getirildi.", "success");
           loadErrors();
         } else {
           showToast("Durum güncellenemedi: " + (res.message || 'Bilinmeyen hata'), "error");
         }
+      }).catch(err => {
+        showToast("İstek başarısız: " + (err.message || 'Bağlantı hatası'), "error");
+      });
+    }
+
+    function toggleCurrentModalErrorStatus() {
+      if (!currentModalError) return;
+      const newStatus = (currentModalError.status === 'resolved') ? 'open' : 'resolved';
+      const payload = { status: newStatus };
+      if (currentModalError.fingerprint) payload.fingerprint = currentModalError.fingerprint;
+      if (currentModalError.id != null) payload.id = currentModalError.id;
+      apiCall('/admin/api/errors/status', 'POST', payload).then(res => {
+        if (res.status === 'ok') {
+          currentModalError.status = newStatus;
+          showToast(newStatus === 'resolved' ? "Hata çözüldü olarak işaretlendi!" : "Hata yeniden açık duruma getirildi.", "success");
+          updateModalStatusButton(newStatus);
+          showTraceback(currentModalError);
+          loadErrors();
+        } else {
+          showToast("Durum güncellenemedi: " + (res.message || 'Bilinmeyen hata'), "error");
+        }
+      }).catch(err => {
+        showToast("İstek başarısız: " + (err.message || 'Bağlantı hatası'), "error");
       });
     }
 
