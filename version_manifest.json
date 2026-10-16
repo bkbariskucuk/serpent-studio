@@ -1,12 +1,12 @@
 {
-  "latest_version": "v1.2.71.62",
+  "latest_version": "v1.2.71.63",
   "min_supported_version": "v0.2.50.00",
   "mandatory": false,
   "release_date": "2026-10-16",
-  "release_title": "Serpent Studio v1.2.71.62",
-  "release_notes": "Serpent Studio v1.2.71.62",
-  "sha256": "0c8bc4c7d4ac68e0ff5ed0ef45d6f03c327a0b0f3712b2f7aa6d8e0486ed3ae6",
-  "file_size_bytes": 140270072,
-  "download_url": "https://github.com/bkbariskucuk/serpent-studio/releases/download/v1.2.71.62/Serpent.Studio.AppImage",
-  "zsync_url": "https://github.com/bkbariskucuk/serpent-studio/releases/download/v1.2.71.62/Serpent.Studio.AppImage.zsync"
+  "release_title": "Serpent Studio v1.2.71.63",
+  "release_notes": "Serpent Studio v1.2.71.63",
+  "sha256": "0658d00beed5026025ee53380beae7ec00e3d4ae02723139afd8b56e021ef397",
+  "file_size_bytes": 140315128,
+  "download_url": "https://github.com/bkbariskucuk/serpent-studio/releases/download/v1.2.71.63/Serpent.Studio.AppImage",
+  "zsync_url": "https://github.com/bkbariskucuk/serpent-studio/releases/download/v1.2.71.63/Serpent.Studio.AppImage.zsync"
 }
