@@ -1,6 +1,6 @@
-# Serpent Studio v1.2.71.62 (Alpha)
+# Serpent Studio v1.2.71.63 (Alpha)
 
-[Serpent.Studio.AppImage indir](https://github.com/bkbariskucuk/serpent-studio/releases/download/v1.2.71.62/Serpent.Studio.AppImage)
+[Serpent.Studio.AppImage indir](https://github.com/bkbariskucuk/serpent-studio/releases/download/v1.2.71.63/Serpent.Studio.AppImage)
 
 ```bash
 chmod +x Serpent.Studio.AppImage
@@ -9,12 +9,13 @@ chmod +x Serpent.Studio.AppImage
 
 Linux x86_64 (Ubuntu 20.04 / Debian 11 ve üzeri). FUSE bulunmayan sistemlerde `--appimage-extract-and-run` parametresiyle çalıştırılabilir. Python veya ek bağımlılık kurulumu gerektirmez.
 
-## v1.2.71.62 ile Gelen Yeni Yetenekler ve İyileştirmeler
+## v1.2.71.63 ile Gelen Yeni Yetenekler ve İyileştirmeler
 
-* **Splash İzohips Saf Dağ Yamacı Morfolojisi ve Sıfır Kasma:** Splash ekranındaki izohips arazisinden tüm yapay tepe, kapalı halka ve nirengi tepe noktacığı (spot height) öğeleri kaldırılarak dış kenara monotonik yükselen doğal dağ yamacı morfolojisine geçildi. `QPolygonF` tamponları ve kirli-bölge güncellemeleri ile render performansı optimize edildi (tam kare ort ~3 ms, 60 FPS akıcı ve kasmasız).
-* **Çatallı Kanvas Çerçevesi (Forked Canvas Frame):** Assembly Canvas ve Core Canvas sağ üst köşesindeki yüzen araç ikonları (Geri Al / İleri Al / Boyama / Palet / Ölçüm / Popout) özel çatallı çerçeve (`ForkCanvasGroupBox`) ile estetik bir körfezle çevrelendi. Açık ve koyu temayla canlı senkronize çalışır.
-* **Küçük Alt Chevron Göstergesi:** Ağaç görünümünde açık durumdaki aşağı bakan chevron simgeleri zarif bir oranda küçültüldü (%25).
-* **Analiz Çıktıları Sıfır Kasma (Dirty-Region Overlay):** Analiz Çıktıları sayfasındaki "Scanning Outputs..." reaktör döndürük yükleme animasyonunda kirli-bölge boyama uygulanarak X11/Wayland üzerinde arka plan yırtılması ve kasma engellendi; "Tüm Animasyonları Durdur" erişilebilirlik tercihiyle tam uyumlu hale getirildi.
+* **Pin Tanımlama Akışı ve Ctrl+S Desteği:** Pin Düzenleyici (`PinCustomizerDialog`) içinde Ctrl+S kısayolu ile pencereyi kapatmadan anında hızlı kayıt imkânı getirildi. "Save & Apply Pin" varsayılan butona bağlandı; pinler arası geçişlerdeki gereksiz uyarı pencereleri kaldırıldı ve çıkış onayı yalnızca kritik kapatma işlemlerine (X, Cancel, Esc) sınırlandı.
+* **Pin Diyalogu ve Panel Kaydırma İyileştirmesi:** Pin diyalog form alanı `QScrollArea` içine alınarak düşük çözünürlüklü ve kısa ekranlarda tüm katman ve renk kontrolleri erişilebilir hale getirildi; dikey kaydırma çubukları optimize edildi.
+* **Core Demet Silme ve Hücre Temizleme:** Core Controls paneline onay ve undo/redo destekli "Demeti Sil" butonu eklendi; silinen demetin core matrisindeki hücreleri doldurucu malzeme ile güvenli biçimde temizlenerek tombstone renk kalıntıları önlendi. Core Canvas sağ-tık menüsüne tek hücre temizleme ("Clear Cell") özelliği eklendi.
+* **Ayrılabilir Syntax Paneli (Popout Syntax Dialog):** Material Definition ve Control Rods önizleme başlıklarına Popout butonu eklendi; syntax paneli bağımsız bir pencereye (`PopoutSyntaxDialog`) taşınabilir, F11 ile tam ekran yapılabilir ve tek tıkla ana pencereye geri yerleştirilebilir (dock).
+* **Kapsamlı Geri Al/İleri Al (Undo/Redo) & Renk Kurtarma:** Reflektör iç yarıçap değişimleri (`chk_auto_core_radius`), demet ekleme/silme ve pin renk düzenlemeleri tam geri alınabilir hale getirildi; `_capture_canvas_state` fonksiyonuna malzeme ve pin renk durumları dahil edilerek Ctrl+Z ile renk bozulmalarının anında geri döndürülmesi sağlandı.
 
 ## İndirme ve Doğrulama
 
