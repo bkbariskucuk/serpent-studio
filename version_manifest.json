@@ -1,12 +1,12 @@
 {
-  "latest_version": "v1.2.71.67",
+  "latest_version": "v1.2.71.74",
   "min_supported_version": "v0.2.50.00",
   "mandatory": false,
   "release_date": "2026-10-17",
-  "release_title": "Serpent Studio v1.2.71.67",
-  "release_notes": "Serpent Studio v1.2.71.67",
-  "sha256": "1344c550d8ae982854fec0da0d2cf27956a53df2da9a7cdd185043b70c82d879",
-  "file_size_bytes": 140638712,
-  "download_url": "https://github.com/bkbariskucuk/serpent-studio/releases/download/v1.2.71.67/Serpent.Studio.AppImage",
-  "zsync_url": "https://github.com/bkbariskucuk/serpent-studio/releases/download/v1.2.71.67/Serpent.Studio.AppImage.zsync"
+  "release_title": "Serpent Studio v1.2.71.74",
+  "release_notes": "Serpent Studio v1.2.71.74 - New Core Wizard, 3-Mode Thermal-Hydraulics, Undo/Redo & Layout Optimization",
+  "sha256": "bd0fe512585ff6a02cf1bcb215ff37b14af9b0ab34fd33522da0d3978e2e6b54",
+  "file_size_bytes": 141023736,
+  "download_url": "https://github.com/bkbariskucuk/serpent-studio/releases/download/v1.2.71.74/Serpent.Studio.AppImage",
+  "zsync_url": "https://github.com/bkbariskucuk/serpent-studio/releases/download/v1.2.71.74/Serpent.Studio.AppImage.zsync"
 }
