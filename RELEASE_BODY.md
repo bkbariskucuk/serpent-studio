@@ -1,6 +1,6 @@
-# Serpent Studio v1.2.71.64 (Alpha)
+# Serpent Studio v1.2.71.65 (Alpha)
 
-[Serpent.Studio.AppImage indir](https://github.com/bkbariskucuk/serpent-studio/releases/download/v1.2.71.64/Serpent.Studio.AppImage)
+[Serpent.Studio.AppImage indir](https://github.com/bkbariskucuk/serpent-studio/releases/download/v1.2.71.65/Serpent.Studio.AppImage)
 
 ```bash
 chmod +x Serpent.Studio.AppImage
@@ -9,13 +9,16 @@ chmod +x Serpent.Studio.AppImage
 
 Linux x86_64 (Ubuntu 20.04 / Debian 11 ve üzeri). FUSE bulunmayan sistemlerde `--appimage-extract-and-run` parametresiyle çalıştırılabilir. Python veya ek bağımlılık kurulumu gerektirmez.
 
-## v1.2.71.64 ile Gelen Yeni Yetenekler ve İyileştirmeler
+## v1.2.71.65 ile Gelen Yeni Yetenekler ve İyileştirmeler
 
-* **Bütünsel Yeni Demet Sihirbazı (New Assembly Wizard):** `+ New Assembly` tıklandığında açılan tek satırlık ID kutusu yerine, iki sütunlu modern bir sihirbaz penceresi (`NewAssemblyWizardDialog`) getirildi. Sol tarafta tüm yapılandırma ayarları, sağ tarafta ise gerçek canlı Assembly Canvas yer alır.
-* **En Dıştaki Halka Sayısı ve Pin Dolgu Seçimi:** Grid boyutu N×N dikkate alınarak dinamik olarak `0` ile `(N-1)//2` arasında sınırlandırılan "En Dıştaki Halka Sayısı" spinbox'ı eklendi. Halka sayısı 0 iken tek düze iç dolgu pini kullanılır; >0 iken dıştaki katmanlar tanımlı dış halka piniyle (renk ikonu ve adıyla) doldurulur. Altıgen ve kare geometride istenen yakıt/pin dolgusu kolaylıkla yapılandırılabilir.
-* **Gerçek Canlı Assembly Canvas:** Sağ taraftaki önizleme tuvali, ana penceredeki Assembly Canvas ile birebir konsantrik pin katmanları (yakıt peleti, boşluk, gömlek, soğutucu malzeme renkleri), lat 1 kare, lat 2 altıgen X ve lat 3 altıgen Y geometri çekirdeği, kılavuz tüpü simgeleri, mouse tekerleğiyle yakınlaştırma/uzaklaştırma, sürükleme (pan) ve "Fit View" butonlarıyla yüksek çözünürlüklü anti-aliased olarak çizilir. Sol taraftaki her ayar değişiminde anında dinamik olarak güncellenir.
-* **Kontrol Çubuğu (CRS) Sekmesi ile Dinamik Entegrasyon:** CRS sekmesinde tanımlı bankaların özellikleri (`ControlRodSystem.banks`) otomatik olarak çekilir. Banka seçildiğinde absorber tipi (B4C, AIC, vb.), gömlek malzemesi (SS304), absorber/gömlek yarıçapları ve kılavuz tüpü pini anlık bilgilendirme kartında gösterilir; standart PWR 25-thimble simetrik dağılımı ile kılavuz tüpleri yerleştirilir. Demet oluşturulduğunda CRS bankasıyla otomatik ilişkilendirilir.
-* **Tam Düzenleme Desteği:** Pencerede demet tanımlandıktan sonra kaydedilen tüm parametreler Assembly Editor içinde kullanıcıya düzenlemeye sunulur; demet adı `assembly_names` ve UI editörüne işlenir, Serpent girdi metni anında üretilir.
+* **Analysis Outputs sonsuz döngü düzeltmesi:** Analysis Outputs sayfasını sonsuz "taranıyor" döngüsüne sokan kök neden giderildi — workspace kökü her yenilemede sessizce yeniden yazılıp silindiği için dosya-sistemi olayları döngüyü kendi kendine besliyordu. Artık workspace kökü önbelleğe alındı, gerçek dosya değişikliklerinde tek bir dengeli yenileme çalışıyor.
+* **Demet sihirbazında merkezden halka dolgusu:** "Halka sayısı" artık merkezi sayar: 1 yalnızca merkez hücreyi, büyüdükçe iç bölge halka halka büyür, en üst değer tüm kafesi iç pinnen doldurur; kalan dış hücreler dış piniyle kaplanır. Kare ve altıgen geometride aynı davranış; "Fill pattern" seçicisi tek başına gereksiz olduğu için kaldırıldı. Assembly Editor'a da merkezden halka dolduran "Halkalar (merkezden)" satırı eklendi.
+* **Sihirbazda CRS elle yerleşimi:** Kontrol çubuğu (CRS) aktifken önizleme tuvalindeki hücrelere sol tıkla kılavuz borusu yerleştirip bırakabilirsiniz. Standart (PWR 25) veya merkez desenleri yerleşimi önden kurar; "Empty (manual placement)" ile tamamen kendiniz seçersiniz; "Guide tubes: N" sayacı canlı güncellenir. Grid boyutu değiştiğinde yerleşim otomatik yeniden hesaplanır.
+* **Sihirbazda Canvas | Script görünümü:** Canlı tuvalin başlığının sağına bir anahtar geldi; "Script" modunda yalnızca o demetin Serpent söz dizimi (`lat` kartı + matrix satırları; altıgen için `pinlat_` notu) okunur halde gösterilir. Betik görünümünde yakınlaştırma araçları devre dışıdır; canvas'a dönüşte otomatik Fit uygulanır.
+* **Segmented anahtarlarda akıcı kayma:** "Standard | Custom Stack" ve "Canvas | Script" anahtarlarında aktif vurgu artık yumuşak bir kayma animasyonuyla taşınır (150 ms). "Tüm Animasyonları Durdur" seçiliyken animasyon yerine anında yerleşir.
+* **Pin Inspector düzenleme turu:** Pencere 1200×800'e büyütüldü; katman satırlarında ▲▼ düğmeleri ortalanıp büyütüldü, ad alanı genişletildi, uzun katman adları ("Coolant Matrix") satırda taşmadan okunur; koyu temada form arka planı ve kaydırma çubukları temayla tutarlı.
+* **Splash ekranı %10 büyük ve açık azure:** Ana ekran 704×440'a büyütüldü (oran korunur; tüm öğe ve fontlar ölçekli). Koyu lacivert yerine ferah açık azure cam görünüm: safir çerçeve beyaz kırılmalı, izohips arazi açık zeminde net, tipografi koyu lacivert + safir, ilerleme çubuğu beyaz cam ray üzerinde derin safir dolgu. Login ve hata ekranları da açık şemaya uyarlandı.
+* **Yılan logosu navy emaye:** Splash ambleminin beyaz pulları derin safire çekildi, pul aralıkları parlak gökyüzü tonuna alındı — uygulama ikonu ve güncelleme penceresi dahil tüm yüzeylerde açık zeminde net okunur.
 
 ## İndirme ve Doğrulama
 
