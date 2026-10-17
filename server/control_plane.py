@@ -283,6 +283,26 @@ class Database:
                     timestamp {timestamp_type} NOT NULL
                 )
             """)
+            cursor.execute(f"""
+                CREATE TABLE IF NOT EXISTS announcements (
+                    id {identity},
+                    message TEXT NOT NULL,
+                    target_type TEXT NOT NULL DEFAULT 'all',
+                    target_usernames TEXT DEFAULT '[]',
+                    created_at {timestamp_type} NOT NULL,
+                    created_by TEXT,
+                    expires_at {timestamp_type},
+                    is_active INTEGER NOT NULL DEFAULT 1
+                )
+            """)
+            cursor.execute(f"""
+                CREATE TABLE IF NOT EXISTS announcement_seen (
+                    announcement_id BIGINT NOT NULL,
+                    username TEXT NOT NULL,
+                    seen_at {timestamp_type} NOT NULL,
+                    UNIQUE (announcement_id, username)
+                )
+            """)
             cursor.execute("CREATE TABLE IF NOT EXISTS admin_bootstrap (username TEXT PRIMARY KEY, password_hash TEXT NOT NULL, salt TEXT NOT NULL)")
             # Ensure restricted_panels column exists
             if self._backend.postgres:
@@ -766,6 +786,170 @@ class Database:
             row = cur.fetchone()
             return row["script_content"] if row else None
 
+    def user_detail(self, username: str, error_limit: int = 15, script_limit: int = 15) -> Optional[Dict[str, Any]]:
+        """Aggregate a single user's row, sessions, recent errors and recent scripts."""
+        u = (username or "").strip().lower()
+        if not u:
+            return None
+        with self._lock, self._get_conn() as conn:
+            cur = conn.cursor()
+            cur.execute("""
+                SELECT u.id, u.username, u.role, u.display_name, u.is_active, u.created_at, u.expires_at, u.restricted_panels,
+                       MAX(s.last_heartbeat) as last_seen,
+                       (SELECT s2.client_version FROM sessions s2 WHERE s2.user_id = u.id AND s2.client_version IS NOT NULL AND s2.client_version != '' ORDER BY s2.last_heartbeat DESC LIMIT 1) as client_version
+                FROM users u
+                LEFT JOIN sessions s ON u.id = s.user_id
+                WHERE u.username = ?
+                GROUP BY u.id, u.username, u.role, u.display_name, u.is_active, u.created_at, u.expires_at, u.restricted_panels
+            """, (u,))
+            row = cur.fetchone()
+            if not row:
+                return None
+            detail: Dict[str, Any] = dict(row)
+            try:
+                detail["restricted_panels"] = json.loads(detail.get("restricted_panels") or "[]")
+            except Exception:
+                detail["restricted_panels"] = []
+
+            cur.execute("""
+                SELECT client_version, platform, created_at, last_heartbeat, is_revoked
+                FROM sessions WHERE user_id = ? ORDER BY last_heartbeat DESC LIMIT 20
+            """, (detail["id"],))
+            detail["sessions"] = [dict(r) for r in cur.fetchall()]
+
+            cur.execute("""
+                SELECT id, exception_type, exception_message, active_tab, app_version, timestamp, last_seen, occurrence_count, status
+                FROM error_reports WHERE username = ?
+                ORDER BY COALESCE(last_seen, timestamp) DESC LIMIT ?
+            """, (u, int(error_limit)))
+            detail["errors"] = [dict(r) for r in cur.fetchall()]
+
+            cur.execute("""
+                SELECT id, project_name, LENGTH(script_content) as size, timestamp
+                FROM scripts WHERE username = ? ORDER BY timestamp DESC LIMIT ?
+            """, (u, int(script_limit)))
+            detail["scripts"] = [dict(r) for r in cur.fetchall()]
+            return detail
+
+    def create_announcement(
+        self, message: str, created_by: str, target_type: str = "all",
+        target_usernames: Optional[List[str]] = None,
+        expires_at: Optional[float] = None,
+    ) -> Tuple[bool, str]:
+        msg = (message or "").strip()
+        if not msg:
+            return False, "Announcement message cannot be empty."
+        if len(msg) > 2000:
+            return False, "Announcement message is too long (max 2000 characters)."
+        ttype = "selected" if str(target_type).strip().lower() == "selected" else "all"
+        targets: List[str] = []
+        if ttype == "selected":
+            seen_names: set = set()
+            for name in (target_usernames or []):
+                candidate = str(name).strip().lower()
+                if candidate and candidate not in seen_names:
+                    seen_names.add(candidate)
+                    targets.append(candidate)
+            if not targets:
+                return False, "Select at least one target user for a targeted announcement."
+        with self._lock, self._get_conn() as conn:
+            cur = conn.cursor()
+            cur.execute("""
+                INSERT INTO announcements (message, target_type, target_usernames, created_at, created_by, expires_at, is_active)
+                VALUES (?, ?, ?, ?, ?, ?, 1)
+            """, (msg, ttype, json.dumps(targets), time.time(), str(created_by or "admin"), expires_at))
+            conn.commit()
+        return True, "Announcement published."
+
+    def list_announcements(self) -> List[Dict[str, Any]]:
+        now = time.time()
+        with self._lock, self._get_conn() as conn:
+            cur = conn.cursor()
+            cur.execute("""
+                SELECT a.id, a.message, a.target_type, a.target_usernames, a.created_at, a.created_by, a.expires_at, a.is_active,
+                       (SELECT COUNT(*) FROM announcement_seen s WHERE s.announcement_id = a.id) as seen_count,
+                       (SELECT COUNT(*) FROM users u WHERE u.is_active = 1) as total_users
+                FROM announcements a ORDER BY a.created_at DESC
+            """)
+            items: List[Dict[str, Any]] = []
+            for r in cur.fetchall():
+                d = dict(r)
+                try:
+                    d["target_usernames"] = json.loads(d.get("target_usernames") or "[]")
+                except Exception:
+                    d["target_usernames"] = []
+                d["target_count"] = len(d["target_usernames"]) if d.get("target_type") == "selected" else (d.get("total_users") or 0)
+                d["is_expired"] = bool(d.get("expires_at") and d["expires_at"] <= now)
+                d.pop("total_users", None)
+                items.append(d)
+            return items
+
+    def set_announcement_active(self, announcement_id: Any, is_active: bool) -> bool:
+        try:
+            aid = int(announcement_id)
+        except Exception:
+            return False
+        with self._lock, self._get_conn() as conn:
+            cur = conn.cursor()
+            cur.execute("UPDATE announcements SET is_active = ? WHERE id = ?", (1 if is_active else 0, aid))
+            changed = cur.rowcount
+            conn.commit()
+        return changed > 0
+
+    def pending_announcements(self, username: str) -> List[Dict[str, Any]]:
+        """Active, unexpired, unseen announcements targeting this user (oldest first)."""
+        u = (username or "").strip().lower()
+        if not u:
+            return []
+        now = time.time()
+        with self._lock, self._get_conn() as conn:
+            cur = conn.cursor()
+            cur.execute("""
+                SELECT a.id, a.message, a.created_at, a.created_by, a.target_type, a.target_usernames
+                FROM announcements a
+                WHERE a.is_active = 1
+                  AND (a.expires_at IS NULL OR a.expires_at > ?)
+                  AND NOT EXISTS (SELECT 1 FROM announcement_seen s WHERE s.announcement_id = a.id AND s.username = ?)
+                ORDER BY a.created_at ASC
+            """, (now, u))
+            pending: List[Dict[str, Any]] = []
+            for r in cur.fetchall():
+                d = dict(r)
+                if d.get("target_type") == "selected":
+                    try:
+                        targets = json.loads(d.get("target_usernames") or "[]")
+                    except Exception:
+                        targets = []
+                    if u not in targets:
+                        continue
+                pending.append({"id": d["id"], "message": d["message"], "created_at": d["created_at"]})
+            return pending
+
+    def mark_announcements_seen(self, username: str, announcement_ids: Any) -> int:
+        u = (username or "").strip().lower()
+        if not u or not isinstance(announcement_ids, (list, tuple)):
+            return 0
+        ids: List[int] = []
+        for raw in list(announcement_ids)[:50]:
+            try:
+                ids.append(int(raw))
+            except Exception:
+                continue
+        if not ids:
+            return 0
+        now = time.time()
+        marked = 0
+        with self._lock, self._get_conn() as conn:
+            cur = conn.cursor()
+            for aid in ids:
+                cur.execute("SELECT 1 FROM announcement_seen WHERE announcement_id = ? AND username = ?", (aid, u))
+                if cur.fetchone():
+                    continue
+                cur.execute("INSERT INTO announcement_seen (announcement_id, username, seen_at) VALUES (?, ?, ?)", (aid, u, now))
+                marked += 1
+            conn.commit()
+        return marked
+
 
 class RequestError(ValueError):
     def __init__(self, status: int, message: str):
@@ -1009,6 +1193,20 @@ class ControlPlaneHandler(http.server.BaseHTTPRequestHandler):
                 self._send_json(200, {"status": "ok", "scripts": scripts})
                 return
 
+            if path == "/admin/api/users/detail":
+                query_params = urllib.parse.parse_qs(parsed.query)
+                target_user = (query_params.get("username", [""])[0] or "").strip().lower()
+                detail = self.db.user_detail(target_user) if target_user else None
+                if not detail:
+                    self._send_json(404, {"status": "error", "message": "User not found."})
+                    return
+                self._send_json(200, {"status": "ok", "detail": detail})
+                return
+
+            if path == "/admin/api/announcements":
+                self._send_json(200, {"status": "ok", "announcements": self.db.list_announcements()})
+                return
+
             if path.startswith("/admin/api/script/"):
                 try:
                     s_id = int(path.split("/")[-1])
@@ -1117,12 +1315,21 @@ class ControlPlaneHandler(http.server.BaseHTTPRequestHandler):
             except Exception:
                 restricted_panels = []
 
+            # Acknowledgements for announcements shown in a previous cycle.
+            seen_ids = body.get("seen_announcement_ids")
+            if isinstance(seen_ids, list) and seen_ids:
+                try:
+                    self.db.mark_announcements_seen(session_data["username"], seen_ids)
+                except Exception:
+                    pass
+
             self._send_json(200, {
                 "status": "ok",
                 "account_status": "active",
                 "username": session_data["username"],
                 "role": session_data.get("role", "tester"),
                 "restricted_panels": restricted_panels,
+                "announcements": self.db.pending_announcements(session_data["username"]),
                 "message": "Heartbeat acknowledged"
             })
             return
@@ -1310,6 +1517,34 @@ class ControlPlaneHandler(http.server.BaseHTTPRequestHandler):
                 self._send_json(200 if ok else 400, {"status": "ok" if ok else "error", "status": new_status, "fingerprint": fp, "id": err_id})
                 return
 
+            if path == "/admin/api/announcements/create":
+                usernames = body.get("usernames", [])
+                if not isinstance(usernames, list):
+                    usernames = []
+                expires_at = None
+                raw_hours = body.get("expires_in_hours")
+                if raw_hours not in (None, "", "0", 0):
+                    try:
+                        hours = float(raw_hours)
+                        if hours > 0:
+                            expires_at = time.time() + hours * 3600.0
+                    except Exception:
+                        expires_at = None
+                ok, msg = self.db.create_announcement(
+                    message=str(body.get("message", "")),
+                    created_by=str(session_data.get("username", "admin")),
+                    target_type=str(body.get("target_type", "all")),
+                    target_usernames=usernames,
+                    expires_at=expires_at,
+                )
+                self._send_json(200 if ok else 400, {"status": "ok" if ok else "error", "message": msg})
+                return
+
+            if path == "/admin/api/announcements/toggle":
+                ok = self.db.set_announcement_active(body.get("id"), bool(body.get("is_active", True)))
+                self._send_json(200 if ok else 400, {"status": "ok" if ok else "error"})
+                return
+
         self._send_json(404, {"status": "error", "message": "Endpoint not found."})
 
 
@@ -1321,61 +1556,69 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <style>
     :root {
-      /* Geological Mineral Base */
-      --bg-deep: #0B0F14;
-      --bg-base: #10161E;
-      --bg-surface: #151D26;
-      --bg-surface-elevated: #1B2531;
-      --bg-surface-card: rgba(21, 29, 38, 0.88);
-      --bg-input: #0D131A;
+      color-scheme: light;
+      /* Azure Glass Sky — Splash Identity (#D5EBFB → #9CC6EE crystal glass) */
+      --bg-deep: #D5EBFB;
+      --bg-base: #CFE7F9;
+      --bg-surface: rgba(255, 255, 255, 0.60);
+      --bg-surface-elevated: rgba(255, 255, 255, 0.78);
+      --bg-surface-card: rgba(255, 255, 255, 0.58);
+      --bg-input: rgba(255, 255, 255, 0.88);
+      --surface-hover: rgba(2, 132, 199, 0.08);
       
-      /* Subtle Stone & Shale Borders */
-      --border-stone-faint: rgba(255, 255, 255, 0.06);
-      --border-stone: #233140;
-      --border-stone-hover: #334456;
+      /* Sapphire Hairline Borders (Crystal Edge, #0284C7 family) */
+      --border-stone-faint: rgba(2, 132, 199, 0.08);
+      --border-stone: rgba(2, 132, 199, 0.16);
+      --border-stone-hover: rgba(2, 132, 199, 0.32);
       
-      /* Typography & Clarity */
-      --text-main: #F1F5F9;
-      --text-soft: #CBD5E1;
-      --text-muted: #8494A5;
-      --text-dim: #536475;
+      /* Navy Enamel Typography (Splash logo family) */
+      --text-main: #0A3A66;
+      --text-soft: #23527C;
+      --text-muted: #456F94;
+      --text-dim: #7396B4;
       
-      /* Alpine Pine & Forest Sage (Life, Primary Health, Actions) */
-      --pine: #10B981;
-      --pine-deep: #059669;
-      --pine-light: #34D399;
-      --pine-subtle: rgba(16, 185, 129, 0.12);
-      --pine-border: rgba(16, 185, 129, 0.3);
+      /* Sapphire Action Spectrum (Splash buttons #0284C7 → #0EA5E9) */
+      --sapphire: #0284C7;
+      --sapphire-deep: #0369A1;
+      --sapphire-light: #0EA5E9;
       
-      /* Glacial Stream / Alpine Lake (Telemetry, Badges) */
+      /* Alpine Health / Success (light-glass tuned) */
+      --pine: #059669;
+      --pine-deep: #047857;
+      --pine-light: #047857;
+      --pine-subtle: rgba(5, 150, 105, 0.10);
+      --pine-border: rgba(5, 150, 105, 0.30);
+      
+      /* Glacial Stream / Telemetry (Sapphire family) */
       --stream: #0284C7;
-      --stream-light: #38BDF8;
-      --stream-subtle: rgba(56, 189, 248, 0.12);
-      --stream-border: rgba(56, 189, 248, 0.3);
+      --stream-light: #0369A1;
+      --stream-subtle: rgba(2, 132, 199, 0.10);
+      --stream-border: rgba(2, 132, 199, 0.30);
       
-      /* Ochre / Raw Honeycomb (Warnings, Restricted) */
+      /* Ochre (Warnings, Restricted, light-glass tuned) */
       --ochre: #D97706;
-      --ochre-light: #F59E0B;
-      --ochre-subtle: rgba(245, 158, 11, 0.12);
-      --ochre-border: rgba(245, 158, 11, 0.3);
+      --ochre-light: #B45309;
+      --ochre-subtle: rgba(217, 119, 6, 0.12);
+      --ochre-border: rgba(217, 119, 6, 0.34);
       
-      /* Terracotta / Rowan Berry (Exceptions, Danger) */
-      --terracotta: #E11D48;
-      --terracotta-dark: #BE123C;
-      --terracotta-subtle: rgba(225, 29, 72, 0.12);
-      --terracotta-border: rgba(225, 29, 72, 0.3);
+      /* Terracotta (Exceptions, Danger, light-glass tuned) */
+      --terracotta: #DC2626;
+      --terracotta-dark: #B91C1C;
+      --terracotta-subtle: rgba(220, 38, 38, 0.10);
+      --terracotta-border: rgba(220, 38, 38, 0.30);
       
-      /* Ambient Natural Shadow */
-      --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.25);
-      --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.35);
-      --shadow-lg: 0 16px 40px rgba(0, 0, 0, 0.5);
+      /* Daylight Soft Shadows */
+      --shadow-sm: 0 2px 8px rgba(10, 58, 102, 0.08);
+      --shadow-md: 0 8px 24px rgba(10, 58, 102, 0.12);
+      --shadow-lg: 0 16px 40px rgba(10, 58, 102, 0.18);
     }
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Inter", sans-serif; }
     body {
       background-color: var(--bg-deep);
       background-image:
-        radial-gradient(ellipse 90% 45% at 50% -5%, rgba(16, 185, 129, 0.06), transparent 70%),
-        radial-gradient(ellipse 60% 35% at 95% 100%, rgba(2, 132, 199, 0.04), transparent 60%);
+        radial-gradient(ellipse 90% 45% at 50% -5%, rgba(255, 255, 255, 0.55), transparent 70%),
+        radial-gradient(ellipse 60% 35% at 95% 100%, rgba(2, 132, 199, 0.10), transparent 60%),
+        linear-gradient(160deg, #D5EBFB 0%, #B8DAF4 35%, #9CC6EE 75%, #C4E2F8 100%);
       background-attachment: fixed;
       color: var(--text-main);
       padding: 24px 20px 48px;
@@ -1412,25 +1655,25 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
       content: '';
       position: absolute;
       top: 0; left: 0; right: 0; height: 1px;
-      background: linear-gradient(90deg, transparent, rgba(52, 211, 153, 0.4), rgba(56, 189, 248, 0.3), transparent);
+      background: linear-gradient(90deg, transparent, rgba(2, 132, 199, 0.45), rgba(56, 189, 248, 0.35), transparent);
     }
     .brand-wrap { display: flex; align-items: center; gap: 14px; }
     .brand-icon {
       width: 44px;
       height: 44px;
       border-radius: 12px;
-      background: linear-gradient(135deg, rgba(16, 185, 129, 0.14), rgba(2, 132, 199, 0.1));
+      background: linear-gradient(135deg, rgba(2, 132, 199, 0.14), rgba(56, 189, 248, 0.10));
       border: 1px solid var(--border-stone-hover);
       display: flex;
       align-items: center;
       justify-content: center;
-      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1);
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65);
       flex-shrink: 0;
     }
     h1 {
       font-size: 19px;
       font-weight: 700;
-      color: #fff;
+      color: var(--text-main);
       display: flex;
       align-items: center;
       gap: 10px;
@@ -1463,7 +1706,7 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
       height: 7px;
       border-radius: 50%;
       background: var(--pine-light);
-      box-shadow: 0 0 8px var(--pine-light);
+      box-shadow: 0 0 8px rgba(5, 150, 105, 0.45);
       animation: pulse 2.5s infinite;
     }
     @keyframes pulse {
@@ -1483,7 +1726,7 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
       border: 1px solid var(--border-stone);
       font-size: 13px;
       font-weight: 500;
-      color: var(--pine-light);
+      color: var(--sapphire-deep);
     }
     
     /* STATS OVERVIEW CARDS: Geological Specimen Boxes */
@@ -1535,7 +1778,7 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
     .stat-number {
       font-size: 28px;
       font-weight: 700;
-      color: #fff;
+      color: var(--text-main);
       letter-spacing: -0.5px;
       line-height: 1.1;
     }
@@ -1605,23 +1848,23 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
       background: var(--bg-surface-elevated);
     }
     .tab-btn.active {
-      background: var(--pine-subtle);
-      color: var(--pine-light);
-      border-color: var(--pine-border);
+      background: rgba(2, 132, 199, 0.12);
+      color: var(--sapphire-deep);
+      border-color: rgba(2, 132, 199, 0.35);
       font-weight: 600;
     }
     .tab-badge {
       font-size: 11px;
       padding: 1px 7px;
       border-radius: 99px;
-      background: rgba(255, 255, 255, 0.08);
+      background: rgba(2, 132, 199, 0.10);
       color: var(--text-soft);
       font-weight: 600;
       transition: all 0.2s;
     }
     .tab-btn.active .tab-badge {
-      background: var(--pine);
-      color: #071710;
+      background: var(--sapphire);
+      color: #FFFFFF;
       font-weight: 700;
     }
     
@@ -1646,7 +1889,7 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
     .card-title {
       font-size: 16px;
       font-weight: 600;
-      color: #fff;
+      color: var(--text-main);
       display: flex;
       align-items: center;
       gap: 8px;
@@ -1678,8 +1921,8 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
       transition: all 0.2s ease;
     }
     .search-input:focus {
-      border-color: var(--pine);
-      box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.18);
+      border-color: var(--sapphire);
+      box-shadow: 0 0 0 3px rgba(2, 132, 199, 0.16);
     }
     .search-icon-svg {
       position: absolute;
@@ -1701,15 +1944,41 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
       transition: all 0.2s ease;
     }
     input::placeholder { color: var(--text-dim); }
+    textarea {
+      background: var(--bg-input);
+      border: 1px solid var(--border-stone);
+      color: var(--text-main);
+      padding: 10px 14px;
+      border-radius: 9px;
+      font-size: 13px;
+      font-family: inherit;
+      outline: none;
+      transition: all 0.2s ease;
+      width: 100%;
+      resize: vertical;
+      box-sizing: border-box;
+    }
+    textarea::placeholder { color: var(--text-dim); }
+    textarea:focus {
+      border-color: var(--sapphire);
+      box-shadow: 0 0 0 3px rgba(2, 132, 199, 0.16);
+    }
+    
+    /* Hypsometric Version Distribution Bars */
+    .vbar-row { display: flex; align-items: center; gap: 10px; }
+    .vbar-label { font-size: 12px; font-weight: 700; font-family: monospace; color: var(--text-main); min-width: 92px; }
+    .vbar-track { flex: 1; height: 10px; border-radius: 99px; background: rgba(2, 132, 199, 0.08); overflow: hidden; }
+    .vbar-fill { height: 100%; border-radius: 99px; transition: width 0.4s ease; }
+    .vbar-count { font-size: 12px; font-weight: 600; color: var(--text-soft); min-width: 72px; text-align: right; }
     input:focus, select:focus {
-      border-color: var(--pine);
-      box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.18);
+      border-color: var(--sapphire);
+      box-shadow: 0 0 0 3px rgba(2, 132, 199, 0.16);
     }
     
     /* BUTTONS: Tactile Natural Controls */
     button.btn {
-      background: linear-gradient(135deg, var(--pine-deep), var(--pine));
-      color: #051910;
+      background: linear-gradient(135deg, var(--sapphire), var(--sapphire-light));
+      color: #FFFFFF;
       border: none;
       padding: 9px 16px;
       border-radius: 9px;
@@ -1721,11 +1990,11 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
       align-items: center;
       gap: 7px;
       user-select: none;
-      box-shadow: 0 2px 6px rgba(16, 185, 129, 0.25);
+      box-shadow: 0 2px 6px rgba(2, 132, 199, 0.28);
     }
     button.btn:hover {
-      background: linear-gradient(135deg, var(--pine), var(--pine-light));
-      box-shadow: 0 4px 12px rgba(16, 185, 129, 0.35);
+      background: linear-gradient(135deg, var(--sapphire-deep), var(--sapphire));
+      box-shadow: 0 4px 12px rgba(2, 132, 199, 0.35);
       transform: translateY(-1px);
     }
     button.btn:active { transform: translateY(0); }
@@ -1739,7 +2008,13 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
     button.btn-secondary:hover {
       background: var(--bg-surface-elevated);
       border-color: var(--border-stone-hover);
-      color: #fff;
+      color: var(--text-main);
+    }
+    
+    button.btn-secondary.active {
+      background: rgba(2, 132, 199, 0.14);
+      color: var(--sapphire-deep);
+      font-weight: 600;
     }
     
     button.btn-danger {
@@ -1751,7 +2026,7 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
     button.btn-danger:hover {
       background: var(--terracotta);
       color: #fff;
-      box-shadow: 0 4px 12px rgba(225, 29, 72, 0.35);
+      box-shadow: 0 4px 12px rgba(220, 38, 38, 0.32);
     }
     
     button.btn-warning {
@@ -1761,9 +2036,9 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
       box-shadow: none;
     }
     button.btn-warning:hover {
-      background: var(--ochre-light);
-      color: #1A1104;
-      box-shadow: 0 4px 12px rgba(245, 158, 11, 0.35);
+      background: #D97706;
+      color: #FFFFFF;
+      box-shadow: 0 4px 12px rgba(217, 119, 6, 0.32);
     }
     
     button.btn-success {
@@ -1774,7 +2049,7 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
     }
     button.btn-success:hover {
       background: var(--pine);
-      color: #051910;
+      color: #FFFFFF;
     }
     
     button.btn-sm {
@@ -1800,9 +2075,9 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
       user-select: none;
     }
     .pill-btn:hover {
-      background: var(--pine-subtle);
-      border-color: var(--pine-border);
-      color: var(--pine-light);
+      background: rgba(2, 132, 199, 0.10);
+      border-color: rgba(2, 132, 199, 0.32);
+      color: var(--sapphire-deep);
       transform: translateY(-1px);
     }
     
@@ -1832,7 +2107,7 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
       border-bottom: 1px solid var(--border-stone-faint);
     }
     tbody tr:last-child { border-bottom: none; }
-    tbody tr:hover { background: rgba(16, 185, 129, 0.035); }
+    tbody tr:hover { background: rgba(2, 132, 199, 0.045); }
     td {
       padding: 13px 16px;
       font-size: 13px;
@@ -1856,8 +2131,8 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
       border: 1px solid var(--stream-border);
     }
     .role-badge:hover {
-      background: rgba(56, 189, 248, 0.22);
-      border-color: var(--stream-light);
+      background: rgba(2, 132, 199, 0.16);
+      border-color: #0EA5E9;
     }
     
     /* MODALS: Basalt Monolith Dialogs */
@@ -1865,7 +2140,7 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
       display: none;
       position: fixed;
       inset: 0;
-      background: rgba(5, 8, 12, 0.82);
+      background: rgba(10, 58, 102, 0.32);
       backdrop-filter: blur(8px);
       justify-content: center;
       align-items: center;
@@ -1873,7 +2148,7 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
       padding: 20px;
     }
     .modal-content {
-      background: var(--bg-surface);
+      background: rgba(249, 252, 255, 0.96);
       border: 1px solid var(--border-stone-hover);
       padding: 26px;
       border-radius: 16px;
@@ -1884,6 +2159,10 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
       box-shadow: var(--shadow-lg);
       animation: modalFadeIn 0.2s ease-out;
       position: relative;
+    }
+    dialog::backdrop {
+      background: rgba(10, 58, 102, 0.28);
+      backdrop-filter: blur(6px);
     }
     @keyframes modalFadeIn {
       from { opacity: 0; transform: scale(0.98); }
@@ -1909,8 +2188,8 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
       user-select: none;
     }
     .panel-card:hover {
-      border-color: var(--pine);
-      background: rgba(16, 185, 129, 0.04);
+      border-color: var(--sapphire);
+      background: rgba(2, 132, 199, 0.06);
     }
     .panel-card.active-restricted {
       background: var(--terracotta-subtle);
@@ -1927,7 +2206,7 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
     .panel-desc { font-size: 11.5px; color: var(--text-muted); margin-top: 4px; line-height: 1.35; }
     
     pre {
-      background: var(--bg-deep);
+      background: rgba(2, 132, 199, 0.06);
       padding: 16px;
       border: 1px solid var(--border-stone);
       border-radius: 10px;
@@ -1973,17 +2252,17 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
       <div class="brand-wrap">
         <div class="brand-icon" title="Serpent Studio Topografik Çekirdek">
           <svg width="26" height="26" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <ellipse cx="14" cy="14" rx="12" ry="6" stroke="#34D399" stroke-width="1.3" transform="rotate(-25 14 14)" stroke-dasharray="2 1"/>
+            <ellipse cx="14" cy="14" rx="12" ry="6" stroke="#0284C7" stroke-width="1.3" transform="rotate(-25 14 14)" stroke-dasharray="2 1"/>
             <ellipse cx="14" cy="14" rx="12" ry="6" stroke="#38BDF8" stroke-width="1.3" transform="rotate(25 14 14)"/>
-            <circle cx="14" cy="14" r="3.2" fill="#10B981"/>
-            <circle cx="14" cy="14" r="6" stroke="rgba(52, 211, 153, 0.35)" stroke-width="1"/>
+            <circle cx="14" cy="14" r="3.2" fill="#0A3A66"/>
+            <circle cx="14" cy="14" r="6" stroke="rgba(2, 132, 199, 0.35)" stroke-width="1"/>
           </svg>
         </div>
         <div>
           <h1>Serpent Studio <span class="badge">Yönetim ve Telemetri</span></h1>
           <div style="margin-top: 4px; display: flex; align-items: center; gap: 8px;">
             <span class="status-pill"><span class="pulse-dot"></span> Canlı Bulut (Render + Neon PostgreSQL)</span>
-            <span class="badge" style="background: rgba(56, 189, 248, 0.12); color: #38BDF8; border: 1px solid rgba(56, 189, 248, 0.3);">__CURRENT_SERVER_VERSION__</span>
+            <span class="badge" style="background: rgba(2, 132, 199, 0.10); color: #0369A1; border: 1px solid rgba(2, 132, 199, 0.30);">__CURRENT_SERVER_VERSION__</span>
           </div>
         </div>
       </div>
@@ -2047,6 +2326,21 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
       </div>
     </div>
 
+    <!-- VERSION DISTRIBUTION CARD -->
+    <div class="card" style="margin-bottom: 18px;">
+      <div class="card-header" style="margin-bottom: 0;">
+        <div>
+          <div class="card-title">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+            İstemci Sürüm Dağılımı
+          </div>
+          <div class="card-subtitle">Testerların son bildirdiği uygulama sürümleri; güncelleme adaptasyonunu tek bakışta gösterir.</div>
+        </div>
+        <span class="badge" id="versionSummaryBadge" style="background: rgba(2, 132, 199, 0.10); color: #0369A1; border: 1px solid rgba(2, 132, 199, 0.30);">-</span>
+      </div>
+      <div id="versionBars" style="display: flex; flex-direction: column; gap: 8px; margin-top: 14px;"></div>
+    </div>
+
     <!-- TABS NAVIGATION -->
     <div class="tabs">
       <button class="tab-btn active" onclick="switchTab('users', event)">
@@ -2060,6 +2354,10 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
       <button class="tab-btn" onclick="switchTab('scripts', event)">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
         Çalıştırılan Serpent Betikleri <span class="tab-badge" id="badgeScripts">0</span>
+      </button>
+      <button class="tab-btn" onclick="switchTab('announcements', event)">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l18-5v12L3 14v-3z"/><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"/></svg>
+        Duyurular & İletişim <span class="tab-badge" id="badgeAnnouncements">0</span>
       </button>
     </div>
 
@@ -2109,9 +2407,13 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
             </div>
             <div class="card-subtitle">Kullanıcıların erişebileceği panelleri kısıtlayabilir veya hesaplarını anında askıya alabilirsiniz.</div>
           </div>
-          <div class="search-input-wrap">
-            <svg class="search-icon-svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-            <input type="text" class="search-input" id="searchUsers" placeholder="Kullanıcı veya rol ara..." oninput="filterUsers()">
+          <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+            <div class="search-input-wrap">
+              <svg class="search-icon-svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              <input type="text" class="search-input" id="searchUsers" placeholder="Kullanıcı veya rol ara..." oninput="filterUsers()">
+            </div>
+            <button class="btn btn-secondary btn-sm" onclick="exportUsers('csv')" title="Listelenen kullanıcıları CSV olarak indir">CSV</button>
+            <button class="btn btn-secondary btn-sm" onclick="exportUsers('json')" title="Listelenen kullanıcıları JSON olarak indir">JSON</button>
           </div>
         </div>
         
@@ -2162,6 +2464,8 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
               <button id="btnErrorsUnique" class="btn btn-secondary active" style="font-size: 11px; padding: 4px 10px; border: none;" onclick="toggleErrorsView(true)">Benzersiz Hatalar</button>
               <button id="btnErrorsAll" class="btn btn-secondary" style="font-size: 11px; padding: 4px 10px; border: none;" onclick="toggleErrorsView(false)">Tüm Kayıtlar</button>
             </div>
+            <button class="btn btn-secondary btn-sm" onclick="exportErrors('csv')" title="Görünen hata listesini CSV olarak indir">CSV</button>
+            <button class="btn btn-secondary btn-sm" onclick="exportErrors('json')" title="Görünen hata listesini JSON olarak indir">JSON</button>
           </div>
         </div>
         <div class="table-container">
@@ -2198,9 +2502,13 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
             </div>
             <div class="card-subtitle">Kullanıcıların izin verdiği paylaşılan modeller ve girdi betikleri.</div>
           </div>
-          <div class="search-input-wrap">
-            <svg class="search-icon-svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-            <input type="text" class="search-input" id="searchScripts" placeholder="Proje veya kullanıcı ara..." oninput="filterScripts()">
+          <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+            <div class="search-input-wrap">
+              <svg class="search-icon-svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              <input type="text" class="search-input" id="searchScripts" placeholder="Proje veya kullanıcı ara..." oninput="filterScripts()">
+            </div>
+            <button class="btn btn-secondary btn-sm" onclick="exportScripts('csv')" title="Listelenen betikleri CSV olarak indir">CSV</button>
+            <button class="btn btn-secondary btn-sm" onclick="exportScripts('json')" title="Listelenen betikleri JSON olarak indir">JSON</button>
           </div>
         </div>
         <div class="table-container">
@@ -2221,6 +2529,76 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
         </div>
       </div>
     </div>
+
+    <!-- ANNOUNCEMENTS TAB -->
+    <div id="tab-announcements" style="display: none;">
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <div class="card-title">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l18-5v12L3 14v-3z"/><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"/></svg>
+              Yeni Duyuru Gönder
+            </div>
+            <div class="card-subtitle">Mesaj, masaüstü uygulamasının canlı heartbeat'i (en geç 60 sn) ile uygulama yeniden başlatılmadan kullanıcılara bildirim olarak gösterilir.</div>
+          </div>
+        </div>
+        <textarea id="announcementMessage" rows="3" placeholder="Duyuru metni (örn: Bu akşam 21:00-22:00 arası bakım yapılacaktır, lütfen çalışmalarınızı kaydedin)..." style="max-width: 820px;"></textarea>
+        <div class="form-row" style="margin-top: 12px;">
+          <select id="announcementTarget" onchange="onAnnouncementTargetChange()" style="flex: 1; min-width: 190px;">
+            <option value="all">Tüm aktif kullanıcılar</option>
+            <option value="selected">Seçili kullanıcılar</option>
+          </select>
+          <select id="announcementExpiry" style="flex: 1; min-width: 170px;">
+            <option value="24">24 saat geçerli</option>
+            <option value="72">3 gün geçerli</option>
+            <option value="168">7 gün geçerli</option>
+            <option value="0">Süresiz</option>
+          </select>
+          <button class="btn" onclick="createAnnouncement()">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+            Duyuruyu Gönder
+          </button>
+        </div>
+        <div id="announcementTargets" style="display: none; margin-top: 14px;">
+          <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 8px; font-weight: 500;">Hedef kullanıcıları seçin:</div>
+          <div class="panel-grid" id="announcementUserPicker"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <div class="card-title">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+              Gönderilmiş Duyurular
+            </div>
+            <div class="card-subtitle">Görülme sayısı, duyuruyu masaüstünde gören kullanıcı sayısıdır; yayından kaldırılan duyurular yeni oturumlarda gösterilmez.</div>
+          </div>
+          <button class="btn btn-secondary btn-sm" onclick="loadAnnouncements()" title="Duyuru listesini yenile">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+            Yenile
+          </button>
+        </div>
+        <div class="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th>Zaman</th>
+                <th>Mesaj</th>
+                <th>Hedef</th>
+                <th>Görülme</th>
+                <th>Bitiş</th>
+                <th>Durum</th>
+                <th>İşlem</th>
+              </tr>
+            </thead>
+            <tbody id="announcementsTableBody">
+              <tr><td colspan="7" style="text-align: center; color: var(--text-muted); padding: 20px;">Yükleniyor...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
   </div>
 
   <!-- TOAST CONTAINER -->
@@ -2230,7 +2608,7 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
   <div class="modal" id="detailModal">
     <div class="modal-content" style="max-width: 900px; width: 95%;">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; flex-wrap: wrap; gap: 10px;">
-        <h3 id="modalTitle" style="color: #fff; font-size: 16px; font-weight: 600;">Detay</h3>
+        <h3 id="modalTitle" style="color: var(--text-main); font-size: 16px; font-weight: 600;">Detay</h3>
         <div style="display: flex; gap: 8px; align-items: center;">
           <button id="btnModalStatus" class="btn btn-sm btn-success" style="display:none;" onclick="toggleCurrentModalErrorStatus()"></button>
           <button class="btn btn-sm btn-secondary" onclick="copyDetailModalContent()">
@@ -2249,7 +2627,7 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
     <div class="modal-content">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
         <div>
-          <h3 style="color: #fff; font-size: 16px; font-weight: 600; display: flex; align-items: center; gap: 8px;">
+          <h3 style="color: var(--text-main); font-size: 16px; font-weight: 600; display: flex; align-items: center; gap: 8px;">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--ochre-light)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
             Panel ve Modül Kısıtlamaları
           </h3>
@@ -2260,7 +2638,7 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
         <button class="btn btn-sm btn-danger" onclick="closeRestrictionsModal()">Kapat</button>
       </div>
 
-      <div style="background: var(--ochre-subtle); border: 1px solid var(--ochre-border); border-radius: 10px; padding: 12px 16px; margin: 14px 0; font-size: 13px; color: #FDE68A; line-height: 1.45;">
+      <div style="background: var(--ochre-subtle); border: 1px solid var(--ochre-border); border-radius: 10px; padding: 12px 16px; margin: 14px 0; font-size: 13px; color: #92400E; line-height: 1.45;">
         <strong>İşleyiş Kuralı:</strong> İşaretlediğiniz paneller kullanıcının masaüstü uygulamasında anında devre dışı bırakılır ve gizlenir. Canlı heartbeat (en geç 60 sn) ile uygulama yeniden başlatılmadan devreye girer.
       </div>
 
@@ -2286,6 +2664,47 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
     </div>
   </div>
 
+  <!-- MODAL: USER DETAIL -->
+  <div class="modal" id="userDetailModal">
+    <div class="modal-content" style="max-width: 980px; width: 95%;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; flex-wrap: wrap; gap: 10px;">
+        <h3 id="userDetailTitle" style="color: var(--text-main); font-size: 16px; font-weight: 600;">Kullanıcı Detayı</h3>
+        <button class="btn btn-sm btn-danger" onclick="closeUserDetail()">Kapat</button>
+      </div>
+      <div id="userDetailSummary" style="display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px;"></div>
+
+      <div style="font-size: 13px; font-weight: 700; color: var(--text-main); margin: 12px 0 8px;">Aktif / Kapatılmış Oturumlar</div>
+      <div class="table-container" style="margin: 0 0 16px;">
+        <table>
+          <thead>
+            <tr><th>Oluşturulma</th><th>Son Nabız</th><th>Sürüm</th><th>Platform</th><th>Durum</th></tr>
+          </thead>
+          <tbody id="userDetailSessions"></tbody>
+        </table>
+      </div>
+
+      <div style="font-size: 13px; font-weight: 700; color: var(--text-main); margin: 12px 0 8px;">Son Hata Raporları</div>
+      <div class="table-container" style="margin: 0 0 16px;">
+        <table>
+          <thead>
+            <tr><th>Zaman</th><th>Tür</th><th>Mesaj</th><th>Tekrar</th><th>Durum</th></tr>
+          </thead>
+          <tbody id="userDetailErrors"></tbody>
+        </table>
+      </div>
+
+      <div style="font-size: 13px; font-weight: 700; color: var(--text-main); margin: 12px 0 8px;">Son Paylaşılan Betikler</div>
+      <div class="table-container" style="margin: 0;">
+        <table>
+          <thead>
+            <tr><th>Zaman</th><th>Proje</th><th>Boyut</th></tr>
+          </thead>
+          <tbody id="userDetailScripts"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
   <script>
     const currentServerVersion = '__CURRENT_SERVER_VERSION__';
     const appStorage = (typeof sessionStorage !== 'undefined') ? sessionStorage : {
@@ -2298,6 +2717,10 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
     let usersCache = [];
     let errorsCache = [];
     let scriptsCache = [];
+    let announcementsCache = [];
+    let lastUsersRendered = [];
+    let lastErrorsRendered = [];
+    let lastScriptsRendered = [];
 
     const AVAILABLE_PANELS = [
       { id: 'materials', name: 'Malzeme Editörü', icon: '🧪', desc: 'Malzeme tanımlama kartları, izotop kütüphaneleri ve kompozisyon' },
@@ -2343,12 +2766,12 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
       if (document.getElementById('adminLoginDialog')) return;
       const dialog = document.createElement('dialog');
       dialog.id = 'adminLoginDialog';
-      dialog.style.cssText = 'margin:auto;padding:28px;background:var(--bg-surface);color:var(--text-main);border:1px solid var(--border-stone-hover);border-radius:16px;box-shadow:0 20px 60px rgba(0,0,0,0.85);max-width:380px;width:90%';
+      dialog.style.cssText = 'margin:auto;padding:28px;background:var(--bg-surface-elevated);color:var(--text-main);border:1px solid var(--border-stone-hover);border-radius:16px;box-shadow:0 20px 60px rgba(10,58,102,0.35);max-width:380px;width:90%';
       dialog.addEventListener('cancel', event => event.preventDefault());
       const form = document.createElement('form');
       const title = document.createElement('h2');
       title.textContent = 'Serpent Studio Yönetici Girişi';
-      title.style.cssText = 'font-size:18px;margin-bottom:16px;color:#fff;text-align:center;font-weight:600;letter-spacing:-0.2px;';
+      title.style.cssText = 'font-size:18px;margin-bottom:16px;color:#0A3A66;text-align:center;font-weight:600;letter-spacing:-0.2px;';
       const username = document.createElement('input');
       username.placeholder = 'Kullanıcı adı'; username.autocomplete = 'username'; username.required = true;
       username.style.cssText = 'width:100%;margin-bottom:12px;display:block;';
@@ -2391,13 +2814,14 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
       if (ev && ev.currentTarget) {
         ev.currentTarget.classList.add('active');
       }
-      ['users', 'errors', 'scripts'].forEach(t => {
+      ['users', 'errors', 'scripts', 'announcements'].forEach(t => {
         const el = document.getElementById('tab-' + t);
         if (el) el.style.display = (t === name) ? 'block' : 'none';
       });
       if (name === 'users') loadUsers();
       if (name === 'errors') loadErrors();
       if (name === 'scripts') loadScripts();
+      if (name === 'announcements') loadAnnouncements();
     }
 
     function apiCall(endpoint, method='GET', body=null) {
@@ -2462,6 +2886,8 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
       if (elBErrors) elBErrors.textContent = errorsCache.length;
       const elBScripts = document.getElementById('badgeScripts');
       if (elBScripts) elBScripts.textContent = scriptsCache.length;
+      const elBAnnouncements = document.getElementById('badgeAnnouncements');
+      if (elBAnnouncements) elBAnnouncements.textContent = announcementsCache.filter(a => !!a.is_active && !a.is_expired).length;
       
       const elECount = document.getElementById('statErrorsCount');
       if (elECount) elECount.textContent = errorsCache.length;
@@ -2474,6 +2900,7 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
         usersCache = data.users || [];
         updateStats();
         renderUsersTable(usersCache);
+        renderVersionDistribution();
       });
     }
 
@@ -2492,6 +2919,7 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
     }
 
     function renderUsersTable(list) {
+      lastUsersRendered = list;
       const tbody = document.getElementById('usersTableBody');
       tbody.innerHTML = '';
       if (!list.length) {
@@ -2525,13 +2953,13 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
           verBadge.textContent = u.client_version;
           const isLatest = currentServerVersion && (u.client_version === currentServerVersion || u.client_version.startsWith(currentServerVersion.split('.').slice(0, 3).join('.')));
           if (isLatest) {
-            verBadge.style.backgroundColor = 'rgba(56, 189, 248, 0.12)';
-            verBadge.style.color = '#38BDF8';
-            verBadge.style.border = '1px solid rgba(56, 189, 248, 0.3)';
+            verBadge.style.backgroundColor = 'rgba(2, 132, 199, 0.10)';
+            verBadge.style.color = '#0369A1';
+            verBadge.style.border = '1px solid rgba(2, 132, 199, 0.30)';
           } else {
-            verBadge.style.backgroundColor = 'rgba(245, 158, 11, 0.12)';
-            verBadge.style.color = '#F59E0B';
-            verBadge.style.border = '1px solid rgba(245, 158, 11, 0.3)';
+            verBadge.style.backgroundColor = 'rgba(217, 119, 6, 0.12)';
+            verBadge.style.color = '#B45309';
+            verBadge.style.border = '1px solid rgba(217, 119, 6, 0.34)';
           }
         } else {
           verBadge.textContent = 'Bilinmiyor';
@@ -2544,6 +2972,7 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
         permissions.style.color = rPanels.length ? 'var(--ochre-light)' : 'var(--text-muted)';
         textCell(tr, lastSeenStr);
         const actions = textCell(tr, ''); actions.style.whiteSpace = 'nowrap';
+        actionButton(actions, 'Detay', () => openUserDetail(u.username), 'btn-secondary');
         actionButton(actions, 'Kısıtla', () => openRestrictionsModal(u.username), 'btn-secondary');
         actionButton(actions, isActive ? 'Askıya Al' : 'Aktifleştir', () => toggleUser(u.username, !isActive), isActive ? 'btn-danger' : 'btn-success');
         actionButton(actions, 'Şifre', () => resetPass(u.username), 'btn-warning');
@@ -2667,11 +3096,11 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
       if (document.getElementById('adminResetPassDialog')) return;
       const dialog = document.createElement('dialog');
       dialog.id = 'adminResetPassDialog';
-      dialog.style.cssText = 'margin:auto;padding:24px;background:var(--bg-surface);color:var(--text-main);border:1px solid var(--border-stone-hover);border-radius:16px;box-shadow:0 20px 60px rgba(0,0,0,0.85);max-width:380px;width:90%';
+      dialog.style.cssText = 'margin:auto;padding:24px;background:var(--bg-surface-elevated);color:var(--text-main);border:1px solid var(--border-stone-hover);border-radius:16px;box-shadow:0 20px 60px rgba(10,58,102,0.35);max-width:380px;width:90%';
       const form = document.createElement('form');
       const title = document.createElement('h3');
       title.textContent = `'${username}' İçin Yeni Şifre`;
-      title.style.cssText = 'font-size:16px;margin-bottom:12px;color:#fff;text-align:center;font-weight:600;';
+      title.style.cssText = 'font-size:16px;margin-bottom:12px;color:#0A3A66;text-align:center;font-weight:600;';
       const desc = document.createElement('p');
       desc.textContent = 'En az 12 karakter içeren güçlü bir şifre giriniz:';
       desc.style.cssText = 'font-size:12px;color:var(--text-muted);margin-bottom:12px;text-align:center;';
@@ -2781,6 +3210,7 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
     }
 
     function renderErrorsTable(list) {
+      lastErrorsRendered = list;
       const tbody = document.getElementById('errorsTableBody');
       tbody.innerHTML = '';
       if (!list || list.length === 0) {
@@ -2814,9 +3244,9 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
           statusBadge.style.border = '1px solid var(--pine-border)';
           statusBadge.textContent = '✓ Çözüldü';
         } else {
-          statusBadge.style.backgroundColor = 'rgba(239, 68, 68, 0.15)';
-          statusBadge.style.color = '#FCA5A5';
-          statusBadge.style.border = '1px solid rgba(239, 68, 68, 0.35)';
+          statusBadge.style.backgroundColor = 'rgba(220, 38, 38, 0.10)';
+          statusBadge.style.color = '#B91C1C';
+          statusBadge.style.border = '1px solid rgba(220, 38, 38, 0.30)';
           statusBadge.textContent = '● Açık';
         }
         statusCell.appendChild(statusBadge);
@@ -2834,7 +3264,7 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
           countBadge.style.backgroundColor = 'var(--terracotta)';
           countBadge.style.color = '#FFFFFF';
         } else if (count > 1) {
-          countBadge.style.backgroundColor = '#D97706';
+          countBadge.style.backgroundColor = '#B45309';
           countBadge.style.color = '#FFFFFF';
         } else {
           countBadge.style.backgroundColor = 'var(--surface-hover)';
@@ -3021,6 +3451,7 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
     }
 
     function renderScriptsTable(list) {
+      lastScriptsRendered = list;
       const tbody = document.getElementById('scriptsTableBody');
       tbody.innerHTML = '';
       if (!list || list.length === 0) {
@@ -3068,6 +3499,420 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
       loadUsers();
       loadErrors();
       loadScripts();
+      loadAnnouncements();
+    }
+
+    function renderVersionDistribution() {
+      const container = document.getElementById('versionBars');
+      if (!container) return;
+      while (container.firstChild) container.removeChild(container.firstChild);
+      const summary = document.getElementById('versionSummaryBadge');
+      const currentPrefix = currentServerVersion ? currentServerVersion.split('.').slice(0, 3).join('.') : '';
+      const counts = {};
+      let latestCount = 0;
+      usersCache.forEach(u => {
+        const v = String(u.client_version || '').trim() || 'Bilinmiyor';
+        counts[v] = (counts[v] || 0) + 1;
+        if (v !== 'Bilinmiyor' && currentPrefix && v.indexOf(currentPrefix) === 0) latestCount += 1;
+      });
+      const entries = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+      if (!entries.length) {
+        const empty = document.createElement('div');
+        empty.style.cssText = 'font-size: 12px; color: var(--text-muted); padding: 4px 0;';
+        empty.textContent = 'Henüz istemci sürümü bildirilmedi.';
+        container.appendChild(empty);
+        if (summary) summary.textContent = '-';
+        return;
+      }
+      const maxCount = entries[0][1];
+      entries.forEach(entry => {
+        const version = entry[0];
+        const count = entry[1];
+        const row = document.createElement('div');
+        row.className = 'vbar-row';
+        const label = document.createElement('span');
+        label.className = 'vbar-label';
+        label.textContent = version;
+        const track = document.createElement('div');
+        track.className = 'vbar-track';
+        const fill = document.createElement('div');
+        fill.className = 'vbar-fill';
+        const isUnknown = (version === 'Bilinmiyor');
+        const isLatest = !isUnknown && currentPrefix && version.indexOf(currentPrefix) === 0;
+        fill.style.width = Math.max(6, Math.round((count / maxCount) * 100)) + '%';
+        fill.style.background = isUnknown
+          ? 'linear-gradient(90deg, #94A3B8, #CBD5E1)'
+          : (isLatest ? 'linear-gradient(90deg, #0284C7, #0EA5E9)' : 'linear-gradient(90deg, #B45309, #D97706)');
+        track.appendChild(fill);
+        const countLabel = document.createElement('span');
+        countLabel.className = 'vbar-count';
+        countLabel.textContent = count + ' kişi';
+        row.appendChild(label); row.appendChild(track); row.appendChild(countLabel);
+        container.appendChild(row);
+      });
+      if (summary) summary.textContent = 'Güncel: ' + latestCount + ' / ' + usersCache.length;
+    }
+
+    function csvEscape(value) {
+      const str = (value == null) ? '' : String(value);
+      if (str.indexOf('"') >= 0 || str.indexOf(',') >= 0 || str.indexOf('\\n') >= 0) {
+        return '"' + str.split('"').join('""') + '"';
+      }
+      return str;
+    }
+
+    function csvRows(header, rows) {
+      const lines = [header].concat(rows);
+      return lines.map(row => row.map(csvEscape).join(',')).join('\\n');
+    }
+
+    function downloadFile(filename, content, mime) {
+      const blob = new Blob([content], {type: mime});
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 2000);
+    }
+
+    function exportUsers(format) {
+      const list = lastUsersRendered || [];
+      if (!list.length) { showToast('Dışa aktarılacak kullanıcı kaydı yok.', 'error'); return; }
+      if (format === 'json') {
+        downloadFile('serpent-kullanicilar.json', JSON.stringify(list, null, 2), 'application/json');
+      } else {
+        const rows = list.map(u => [
+          u.username || '', u.display_name || '', u.role || '',
+          u.is_active ? 'aktif' : 'askida',
+          u.client_version || '',
+          Array.isArray(u.restricted_panels) ? u.restricted_panels.join('|') : '',
+          u.last_seen ? new Date(u.last_seen * 1000).toISOString() : ''
+        ]);
+        downloadFile('serpent-kullanicilar.csv', csvRows(['username','display_name','role','durum','son_surum','panel_kisitlari','son_gorulme'], rows), 'text/csv;charset=utf-8');
+      }
+      showToast('Kullanıcı listesi indirildi (' + (format === 'json' ? 'JSON' : 'CSV') + ').', 'success');
+    }
+
+    function exportErrors(format) {
+      const list = lastErrorsRendered || [];
+      if (!list.length) { showToast('Dışa aktarılacak hata kaydı yok.', 'error'); return; }
+      if (format === 'json') {
+        downloadFile('serpent-hatalar.json', JSON.stringify(list, null, 2), 'application/json');
+      } else {
+        const rows = list.map(e => {
+          const names = (e.users && e.users.length) ? e.users.join('|') : (e.username || '');
+          const timeVal = e.last_seen || e.timestamp;
+          return [
+            timeVal ? new Date(timeVal * 1000).toISOString() : '',
+            e.status || 'open',
+            e.occurrence_count || 1,
+            e.exception_type || '',
+            e.call_site || '',
+            e.exception_message || '',
+            names,
+            e.active_tab || '',
+            e.app_version || ''
+          ];
+        });
+        downloadFile('serpent-hatalar.csv', csvRows(['zaman','durum','tekrar','tur','cagri_konumu','mesaj','kullanicilar','sekme','surum'], rows), 'text/csv;charset=utf-8');
+      }
+      showToast('Hata listesi indirildi (' + (format === 'json' ? 'JSON' : 'CSV') + ').', 'success');
+    }
+
+    function exportScripts(format) {
+      const list = lastScriptsRendered || [];
+      if (!list.length) { showToast('Dışa aktarılacak betik kaydı yok.', 'error'); return; }
+      if (format === 'json') {
+        downloadFile('serpent-betikler.json', JSON.stringify(list, null, 2), 'application/json');
+      } else {
+        const rows = list.map(s => [
+          s.timestamp ? new Date(s.timestamp * 1000).toISOString() : '',
+          s.username || '',
+          s.project_name || '',
+          ((s.size || 0) / 1024).toFixed(1) + ' KB'
+        ]);
+        downloadFile('serpent-betikler.csv', csvRows(['zaman','kullanici','proje','boyut'], rows), 'text/csv;charset=utf-8');
+      }
+      showToast('Betik listesi indirildi (' + (format === 'json' ? 'JSON' : 'CSV') + ').', 'success');
+    }
+
+    function loadAnnouncements() {
+      apiCall('/admin/api/announcements').then(data => {
+        announcementsCache = data.announcements || [];
+        updateStats();
+        renderAnnouncementsTable(announcementsCache);
+      });
+    }
+
+    function renderAnnouncementsTable(list) {
+      const tbody = document.getElementById('announcementsTableBody');
+      while (tbody.firstChild) tbody.removeChild(tbody.firstChild);
+      if (!list || list.length === 0) {
+        const tr = document.createElement('tr');
+        const td = document.createElement('td');
+        td.colSpan = 7;
+        td.style.textAlign = 'center';
+        td.style.padding = '24px';
+        td.style.color = 'var(--text-muted)';
+        td.textContent = 'Henüz duyuru gönderilmedi.';
+        tr.appendChild(td);
+        tbody.appendChild(tr);
+        return;
+      }
+      list.forEach(a => {
+        const tr = document.createElement('tr');
+        textCell(tr, a.created_at ? new Date(a.created_at * 1000).toLocaleString('tr-TR') : '-');
+
+        const msgCell = textCell(tr, '');
+        const msgDiv = document.createElement('div');
+        const fullMsg = String(a.message || '');
+        msgDiv.textContent = fullMsg.length > 60 ? (fullMsg.substring(0, 60) + '...') : fullMsg;
+        msgDiv.title = fullMsg;
+        msgDiv.style.maxWidth = '340px';
+        msgCell.appendChild(msgDiv);
+
+        const targetStr = (a.target_type === 'selected')
+          ? ('Seçili: ' + (Array.isArray(a.target_usernames) ? a.target_usernames.join(', ') : ''))
+          : 'Tüm kullanıcılar';
+        textCell(tr, targetStr);
+
+        textCell(tr, (a.seen_count || 0) + ' / ' + (a.target_count || 0));
+
+        if (a.is_expired) {
+          textCell(tr, 'Süresi doldu');
+        } else if (a.expires_at) {
+          textCell(tr, new Date(a.expires_at * 1000).toLocaleString('tr-TR'));
+        } else {
+          textCell(tr, 'Süresiz');
+        }
+
+        const stCell = textCell(tr, '');
+        const stBadge = document.createElement('span');
+        stBadge.style.display = 'inline-block';
+        stBadge.style.padding = '2px 8px';
+        stBadge.style.borderRadius = '99px';
+        stBadge.style.fontWeight = '600';
+        stBadge.style.fontSize = '11px';
+        if (a.is_expired) {
+          stBadge.style.backgroundColor = 'var(--surface-hover)';
+          stBadge.style.color = 'var(--text-muted)';
+          stBadge.textContent = 'Süresi Doldu';
+        } else if (a.is_active) {
+          stBadge.style.backgroundColor = 'rgba(2, 132, 199, 0.10)';
+          stBadge.style.color = '#0369A1';
+          stBadge.style.border = '1px solid rgba(2, 132, 199, 0.30)';
+          stBadge.textContent = '● Yayında';
+        } else {
+          stBadge.style.backgroundColor = 'rgba(220, 38, 38, 0.10)';
+          stBadge.style.color = '#B91C1C';
+          stBadge.style.border = '1px solid rgba(220, 38, 38, 0.30)';
+          stBadge.textContent = 'Yayından Kaldırıldı';
+        }
+        stCell.appendChild(stBadge);
+
+        const actionTd = textCell(tr, '');
+        actionTd.style.whiteSpace = 'nowrap';
+        actionButton(actionTd, a.is_active ? 'Yayından Kaldır' : 'Yeniden Yayınla',
+          () => toggleAnnouncement(a.id, !a.is_active),
+          a.is_active ? 'btn-danger' : 'btn-success');
+        tbody.appendChild(tr);
+      });
+    }
+
+    function toggleAnnouncement(id, isActive) {
+      apiCall('/admin/api/announcements/toggle', 'POST', {id: id, is_active: isActive}).then(res => {
+        if (res.status === 'ok') {
+          showToast(isActive ? 'Duyuru yeniden yayınlandı.' : 'Duyuru yayından kaldırıldı.', 'success');
+          loadAnnouncements();
+        } else {
+          showToast('Duyuru güncellenemedi.', 'error');
+        }
+      }).catch(err => showToast('İstek başarısız: ' + (err.message || 'Bağlantı hatası'), 'error'));
+    }
+
+    function onAnnouncementTargetChange() {
+      const targetSel = document.getElementById('announcementTarget');
+      const wrap = document.getElementById('announcementTargets');
+      if (!targetSel || !wrap) return;
+      const isSelected = (targetSel.value === 'selected');
+      wrap.style.display = isSelected ? 'block' : 'none';
+      if (isSelected) buildAnnouncementUserPicker();
+    }
+
+    function buildAnnouncementUserPicker() {
+      const picker = document.getElementById('announcementUserPicker');
+      if (!picker) return;
+      while (picker.firstChild) picker.removeChild(picker.firstChild);
+      const candidates = usersCache.filter(u => !!u.is_active);
+      if (!candidates.length) {
+        const empty = document.createElement('div');
+        empty.style.fontSize = '12px';
+        empty.style.color = 'var(--text-muted)';
+        empty.textContent = 'Aktif kullanıcı bulunmuyor.';
+        picker.appendChild(empty);
+        return;
+      }
+      candidates.forEach(u => {
+        const card = document.createElement('label');
+        card.className = 'panel-card';
+        const cb = document.createElement('input');
+        cb.type = 'checkbox';
+        cb.value = u.username || '';
+        cb.className = 'announcement-user-check';
+        const span = document.createElement('span');
+        span.textContent = (u.display_name || u.username || '') + ' (' + (u.username || '') + ')';
+        span.style.fontSize = '12px';
+        card.appendChild(cb);
+        card.appendChild(span);
+        picker.appendChild(card);
+      });
+    }
+
+    function createAnnouncement() {
+      const msgEl = document.getElementById('announcementMessage');
+      const message = (msgEl.value || '').trim();
+      const targetType = document.getElementById('announcementTarget').value;
+      const expiry = document.getElementById('announcementExpiry').value;
+      if (!message) { showToast('Duyuru metni boş olamaz.', 'error'); return; }
+      let usernames = [];
+      if (targetType === 'selected') {
+        document.querySelectorAll('.announcement-user-check').forEach(cb => { if (cb.checked) usernames.push(cb.value); });
+        if (!usernames.length) { showToast('En az bir hedef kullanıcı seçin.', 'error'); return; }
+      }
+      apiCall('/admin/api/announcements/create', 'POST', {
+        message: message,
+        target_type: targetType,
+        usernames: usernames,
+        expires_in_hours: expiry
+      }).then(res => {
+        if (res.status === 'ok') {
+          showToast('Duyuru yayınlandı! Kullanıcılara en geç 60 sn içinde gösterilecek.', 'success');
+          msgEl.value = '';
+          loadAnnouncements();
+        } else {
+          showToast('Duyuru gönderilemedi: ' + (res.message || 'Bilinmeyen hata'), 'error');
+        }
+      }).catch(err => showToast('İstek başarısız: ' + (err.message || 'Bağlantı hatası'), 'error'));
+    }
+
+    function openUserDetail(username) {
+      apiCall('/admin/api/users/detail?username=' + encodeURIComponent(username)).then(data => {
+        if (data.status !== 'ok' || !data.detail) {
+          showToast('Kullanıcı detayı alınamadı.', 'error');
+          return;
+        }
+        renderUserDetail(data.detail);
+      }).catch(err => showToast('İstek başarısız: ' + (err.message || 'Bağlantı hatası'), 'error'));
+    }
+
+    function detailChip(label, value, colorValue) {
+      const chip = document.createElement('span');
+      chip.style.display = 'inline-flex';
+      chip.style.alignItems = 'center';
+      chip.style.gap = '6px';
+      chip.style.padding = '6px 10px';
+      chip.style.borderRadius = '9px';
+      chip.style.background = 'var(--surface-hover)';
+      chip.style.border = '1px solid var(--border-stone)';
+      chip.style.fontSize = '12px';
+      chip.style.color = 'var(--text-muted)';
+      chip.textContent = label + ': ';
+      const strong = document.createElement('strong');
+      strong.style.color = colorValue || 'var(--text-main)';
+      strong.textContent = value;
+      chip.appendChild(strong);
+      return chip;
+    }
+
+    function fillDetailEmptyRow(tbody, columns, message) {
+      const tr = document.createElement('tr');
+      const td = document.createElement('td');
+      td.colSpan = columns;
+      td.textContent = message;
+      td.style.textAlign = 'center';
+      td.style.padding = '14px';
+      td.style.color = 'var(--text-muted)';
+      tr.appendChild(td);
+      tbody.appendChild(tr);
+    }
+
+    function renderUserDetail(detail) {
+      document.getElementById('userDetailTitle').textContent = 'Kullanıcı Detayı: ' + (detail.username || '');
+      const summary = document.getElementById('userDetailSummary');
+      while (summary.firstChild) summary.removeChild(summary.firstChild);
+      summary.appendChild(detailChip('Rol', detail.role || '-'));
+      summary.appendChild(detailChip('Durum', detail.is_active ? 'Aktif' : 'Askıya Alındı', detail.is_active ? 'var(--pine-light)' : 'var(--terracotta)'));
+      summary.appendChild(detailChip('İsim', detail.display_name || '-'));
+      summary.appendChild(detailChip('Son Sürüm', detail.client_version || 'Bilinmiyor'));
+      summary.appendChild(detailChip('Son Görülme', detail.last_seen ? new Date(detail.last_seen * 1000).toLocaleString('tr-TR') : 'Hiç giriş yapmadı'));
+      const rp = Array.isArray(detail.restricted_panels) ? detail.restricted_panels : [];
+      summary.appendChild(detailChip('Kısıtlar', rp.length ? rp.join(', ') : 'Yok', rp.length ? 'var(--ochre-light)' : 'var(--pine-light)'));
+
+      const sessions = detail.sessions || [];
+      const sessBody = document.getElementById('userDetailSessions');
+      while (sessBody.firstChild) sessBody.removeChild(sessBody.firstChild);
+      if (!sessions.length) {
+        fillDetailEmptyRow(sessBody, 5, 'Kayıtlı oturum yok.');
+      } else {
+        sessions.forEach(s => {
+          const tr = document.createElement('tr');
+          textCell(tr, s.created_at ? new Date(s.created_at * 1000).toLocaleString('tr-TR') : '-');
+          textCell(tr, s.last_heartbeat ? new Date(s.last_heartbeat * 1000).toLocaleString('tr-TR') : '-');
+          textCell(tr, s.client_version || '-');
+          textCell(tr, s.platform || '-');
+          const stCell = textCell(tr, s.is_revoked ? 'Kapatıldı' : 'Aktif');
+          stCell.style.color = s.is_revoked ? 'var(--text-muted)' : 'var(--pine-light)';
+          stCell.style.fontWeight = '600';
+          sessBody.appendChild(tr);
+        });
+      }
+
+      const errors = detail.errors || [];
+      const errBody = document.getElementById('userDetailErrors');
+      while (errBody.firstChild) errBody.removeChild(errBody.firstChild);
+      if (!errors.length) {
+        fillDetailEmptyRow(errBody, 5, 'Bu kullanıcıya ait hata kaydı yok.');
+      } else {
+        errors.forEach(e => {
+          const tr = document.createElement('tr');
+          const timeVal = e.last_seen || e.timestamp;
+          textCell(tr, timeVal ? new Date(timeVal * 1000).toLocaleString('tr-TR') : '-');
+          const typeCell = textCell(tr, e.exception_type || '-');
+          typeCell.style.color = 'var(--terracotta)';
+          typeCell.style.fontWeight = '600';
+          const msg = String(e.exception_message || '');
+          textCell(tr, msg.length > 48 ? (msg.substring(0, 48) + '...') : msg);
+          textCell(tr, (e.occurrence_count || 1) + 'x');
+          const stCell = textCell(tr, e.status === 'resolved' ? 'Çözüldü' : 'Açık');
+          stCell.style.color = e.status === 'resolved' ? 'var(--pine-light)' : '#B91C1C';
+          stCell.style.fontWeight = '600';
+          errBody.appendChild(tr);
+        });
+      }
+
+      const scripts = detail.scripts || [];
+      const sBody = document.getElementById('userDetailScripts');
+      while (sBody.firstChild) sBody.removeChild(sBody.firstChild);
+      if (!scripts.length) {
+        fillDetailEmptyRow(sBody, 3, 'Paylaşılan betik yok.');
+      } else {
+        scripts.forEach(s => {
+          const tr = document.createElement('tr');
+          textCell(tr, s.timestamp ? new Date(s.timestamp * 1000).toLocaleString('tr-TR') : '-');
+          textCell(tr, s.project_name || '-');
+          textCell(tr, ((s.size || 0) / 1024).toFixed(1) + ' KB');
+          sBody.appendChild(tr);
+        });
+      }
+
+      document.getElementById('userDetailModal').style.display = 'flex';
+    }
+
+    function closeUserDetail() {
+      document.getElementById('userDetailModal').style.display = 'none';
     }
 
     function initTopoAnimation() {
@@ -3100,13 +3945,22 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
         const t2 = t * 0.00007;
         const t3 = t * 0.00012;
 
+        // Hypsometric azure spectrum (splash identity): deep sapphire index
+        // contours on even levels, cyan intermediate contours on odd levels.
+        const levelStyles = [
+          { color: 'rgba(2, 132, 199, 0.20)', index: true },
+          { color: 'rgba(6, 182, 212, 0.14)', index: false },
+          { color: 'rgba(14, 165, 233, 0.18)', index: true },
+          { color: 'rgba(56, 189, 248, 0.12)', index: false },
+        ];
+
         for (let i = 0; i < N; i++) {
           const u = (i + 0.6) / (N + 0.8);
-          const isIndex = (i % 3 === 0);
+          const levelStyle = levelStyles[i % levelStyles.length];
 
           ctx.beginPath();
-          ctx.lineWidth = isIndex ? 1.35 : 0.85;
-          ctx.strokeStyle = isIndex ? 'rgba(52, 211, 153, 0.08)' : 'rgba(52, 211, 153, 0.038)';
+          ctx.lineWidth = levelStyle.index ? 1.35 : 0.85;
+          ctx.strokeStyle = levelStyle.color;
 
           for (let s = 0; s <= steps; s++) {
             const nx = s / steps;
@@ -3137,7 +3991,7 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
           const isIndex = (k % 2 === 0);
           ctx.beginPath();
           ctx.lineWidth = isIndex ? 1.3 : 0.8;
-          ctx.strokeStyle = isIndex ? 'rgba(52, 211, 153, 0.09)' : 'rgba(52, 211, 153, 0.045)';
+          ctx.strokeStyle = isIndex ? 'rgba(2, 132, 199, 0.19)' : 'rgba(14, 165, 233, 0.12)';
 
           const ringSteps = 60;
           for (let s = 0; s <= ringSteps; s++) {
@@ -3156,7 +4010,7 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
         // Spot elevation peak dot
         ctx.beginPath();
         ctx.arc(sx, sy, 2, 0, Math.PI * 2);
-        ctx.fillStyle = 'rgba(52, 211, 153, 0.35)';
+        ctx.fillStyle = 'rgba(3, 105, 161, 0.50)';
         ctx.fill();
 
         if (!reducedMotion && typeof requestAnimationFrame === 'function') {
