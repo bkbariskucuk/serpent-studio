@@ -1,12 +1,12 @@
 {
-  "latest_version": "v1.2.71.74",
+  "latest_version": "v1.2.71.75",
   "min_supported_version": "v0.2.50.00",
   "mandatory": false,
-  "release_date": "2026-10-17",
-  "release_title": "Serpent Studio v1.2.71.74",
-  "release_notes": "Serpent Studio v1.2.71.74 - New Core Wizard, 3-Mode Thermal-Hydraulics, Undo/Redo & Layout Optimization",
-  "sha256": "bd0fe512585ff6a02cf1bcb215ff37b14af9b0ab34fd33522da0d3978e2e6b54",
-  "file_size_bytes": 141023736,
-  "download_url": "https://github.com/bkbariskucuk/serpent-studio/releases/download/v1.2.71.74/Serpent.Studio.AppImage",
-  "zsync_url": "https://github.com/bkbariskucuk/serpent-studio/releases/download/v1.2.71.74/Serpent.Studio.AppImage.zsync"
+  "release_date": "2026-10-18",
+  "release_title": "Serpent Studio v1.2.71.75",
+  "release_notes": "Serpent Studio v1.2.71.75 - Update Notification Toast and Wizard Ctrl+Y Shortcut Fix",
+  "sha256": "01da73c352a1285f9f04a007286f54e2378270a0ef059fd1736fae73b365ac1d",
+  "file_size_bytes": 141036024,
+  "download_url": "https://github.com/bkbariskucuk/serpent-studio/releases/download/v1.2.71.75/Serpent.Studio.AppImage",
+  "zsync_url": "https://github.com/bkbariskucuk/serpent-studio/releases/download/v1.2.71.75/Serpent.Studio.AppImage.zsync"
 }
