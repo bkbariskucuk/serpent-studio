@@ -1,12 +1,12 @@
 {
-  "latest_version": "v1.2.71.76",
+  "latest_version": "v1.2.72.77",
   "min_supported_version": "v0.2.50.00",
   "mandatory": false,
-  "release_date": "2026-10-19",
-  "release_title": "Serpent Studio v1.2.71.76",
-  "release_notes": "Letarji grafiği açılış akıcılığı, logaritmik bın merkezi ve spektrum normalizasyon uyarıları.",
-  "sha256": "f13d05921765f506f0892b841b56a4f435a5874e66285766610c068d5e542283",
-  "file_size_bytes": 141089272,
-  "download_url": "https://github.com/bkbariskucuk/serpent-studio/releases/download/v1.2.71.76/Serpent.Studio.AppImage",
-  "zsync_url": "https://github.com/bkbariskucuk/serpent-studio/releases/download/v1.2.71.76/Serpent.Studio.AppImage.zsync"
+  "release_date": "2026-10-22",
+  "release_title": "Serpent Studio v1.2.72.77",
+  "release_notes": "Serpent Studio v1.2.72.77 - Cihaz Bağlama, Ed25519 İmzalı Lisans, 2 Cihaz Sınırı, Uzun Oturum ve Türkçe Kullanıcı Sözleşmesi",
+  "sha256": "d8472f172f06c5f448468c0e65585cd5af1e0fa995fd722f2eda54ed383d99d3",
+  "file_size_bytes": 141179384,
+  "download_url": "https://github.com/bkbariskucuk/serpent-studio/releases/download/v1.2.72.77/Serpent.Studio.AppImage",
+  "zsync_url": "https://github.com/bkbariskucuk/serpent-studio/releases/download/v1.2.72.77/Serpent.Studio.AppImage.zsync"
 }
