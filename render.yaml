@@ -14,3 +14,7 @@ services:
         sync: false
       - key: SERPENT_DATABASE_URL
         sync: false
+      - key: SERPENT_LICENSE_PRIVATE_KEY
+        sync: false
+      - key: SERPENT_REQUIRE_DEVICE_BINDING
+        value: "0"

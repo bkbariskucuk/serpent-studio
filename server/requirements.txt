@@ -1,2 +1,3 @@
 # Server only. SQLite development and the desktop client do not require this.
 psycopg[binary]==3.3.6
+cryptography==46.0.5

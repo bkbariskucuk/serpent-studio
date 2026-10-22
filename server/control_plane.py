@@ -30,8 +30,14 @@ from typing import Any, Dict, List, Optional, Tuple
 
 if __package__:
     from .storage import Backend, validate_database_url
+    from .licensing import (
+        DEVICE_LIMIT, HEARTBEAT_INTERVAL_SECONDS, LICENSE_TTL_SECONDS, LicenseSigner,
+    )
 else:
     from storage import Backend, validate_database_url
+    from licensing import (
+        DEVICE_LIMIT, HEARTBEAT_INTERVAL_SECONDS, LICENSE_TTL_SECONDS, LicenseSigner,
+    )
 
 logger = logging.getLogger("serpent.control_plane")
 
@@ -40,10 +46,12 @@ DEFAULT_HOST = os.environ.get("SERPENT_CONTROL_PLANE_HOST", "0.0.0.0")
 DB_PATH = os.environ.get("SERPENT_CONTROL_PLANE_DB", os.path.join(os.path.dirname(__file__), "control_plane.db"))
 
 MIN_PASSWORD_LENGTH = 12
-SESSION_MAX_AGE = 30 * 86400
+SESSION_MAX_AGE = 90 * 86400
 MAX_REQUEST_BODY = 2 * 1024 * 1024
 REQUEST_TIMEOUT_SECONDS = 15
 MAX_CONCURRENT_REQUESTS = 32
+DEVICE_FINGERPRINT_RE = re.compile(r"^[0-9a-f]{64}$")
+REQUIRE_DEVICE_BINDING = os.environ.get("SERPENT_REQUIRE_DEVICE_BINDING", "0").strip().lower() not in ("0", "false", "no", "")
 
 
 def _load_server_version() -> str:
@@ -167,6 +175,19 @@ def hash_token(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
+def normalize_device_fingerprint(value: Any) -> str:
+    """Accept only the digest format emitted by the desktop client."""
+    candidate = str(value or "").strip().lower()
+    return candidate if DEVICE_FINGERPRINT_RE.fullmatch(candidate) else ""
+
+
+def sanitize_device_label(value: Any, fallback: str = "Bilinmeyen cihaz") -> str:
+    """Keep admin device labels readable and free of control characters."""
+    label = re.sub(r"[\x00-\x1f\x7f]+", " ", str(value or "")).strip()
+    label = re.sub(r"\s+", " ", label)
+    return (label or fallback)[:64]
+
+
 class TelemetryRateLimiter:
     """In-memory sliding window rate limiter to protect telemetry endpoints from spam and DoS."""
 
@@ -212,12 +233,14 @@ def compute_error_fingerprint(exception_type: str, exception_message: str, trace
 
 class Database:
     def __init__(self, db_path: str = DB_PATH, *, admin_username: Optional[str] = None, admin_password: Optional[str] = None,
-                 database_url: str = '', bootstrap_admin: bool = True) -> None:
+                 database_url: str = '', bootstrap_admin: bool = True,
+                 license_signer: Optional[LicenseSigner] = None) -> None:
         self.db_path = db_path
         self._backend = Backend(db_path, database_url)
         self._lock = threading.Lock()
         self._admin_username = (admin_username or os.environ.get("SERPENT_ADMIN_USER", "admin")).strip().lower()
         self._admin_password = admin_password if admin_password is not None else os.environ.get("SERPENT_ADMIN_PASS")
+        self.license_signer = license_signer if license_signer is not None else LicenseSigner.from_env()
         self._init_schema(bootstrap_admin=bootstrap_admin)
         self._admin_password = None
 
@@ -254,12 +277,34 @@ class Database:
                     username TEXT NOT NULL,
                     client_version TEXT,
                     platform TEXT,
+                    device_id BIGINT,
+                    device_fingerprint TEXT,
+                    license_jti TEXT,
+                    license_expires_at {timestamp_type},
                     created_at {timestamp_type} NOT NULL,
                     last_heartbeat {timestamp_type} NOT NULL,
                     is_revoked INTEGER NOT NULL DEFAULT 0,
                     FOREIGN KEY (user_id) REFERENCES users(id)
                 )
             """)
+            cursor.execute(f"""
+                CREATE TABLE IF NOT EXISTS devices (
+                    id {identity},
+                    user_id BIGINT NOT NULL,
+                    fingerprint TEXT NOT NULL,
+                    label TEXT,
+                    platform TEXT,
+                    first_seen {timestamp_type} NOT NULL,
+                    last_seen {timestamp_type} NOT NULL,
+                    last_ip TEXT,
+                    client_version TEXT,
+                    is_revoked INTEGER NOT NULL DEFAULT 0,
+                    UNIQUE (user_id, fingerprint),
+                    FOREIGN KEY (user_id) REFERENCES users(id)
+                )
+            """)
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_devices_user_id ON devices(user_id)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_devices_user_active ON devices(user_id, is_revoked)")
             cursor.execute(f"""
                 CREATE TABLE IF NOT EXISTS error_reports (
                     id {identity},
@@ -312,6 +357,22 @@ class Database:
             cols = [r["name"] for r in cursor.fetchall()]
             if "restricted_panels" not in cols:
                 cursor.execute("ALTER TABLE users ADD COLUMN restricted_panels TEXT DEFAULT '[]'")
+
+            # Upgrade pre-device-binding session tables in place. SQLite and
+            # PostgreSQL both support ADD COLUMN without dropping live sessions.
+            if self._backend.postgres:
+                cursor.execute("SELECT column_name AS name FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='sessions'")
+            else:
+                cursor.execute("PRAGMA table_info(sessions)")
+            session_cols = [r["name"] for r in cursor.fetchall()]
+            for column_name, column_type in (
+                ("device_id", "BIGINT"),
+                ("device_fingerprint", "TEXT"),
+                ("license_jti", "TEXT"),
+                ("license_expires_at", timestamp_type),
+            ):
+                if column_name not in session_cols:
+                    cursor.execute(f"ALTER TABLE sessions ADD COLUMN {column_name} {column_type}")
 
             # Ensure error_reports deduplication columns exist
             if self._backend.postgres:
@@ -455,8 +516,13 @@ class Database:
             return False
         with self._lock, self._get_conn() as conn:
             cur = conn.cursor()
-            cur.execute("DELETE FROM sessions WHERE username = ?", (username.strip().lower(),))
-            cur.execute("DELETE FROM users WHERE username = ?", (username.strip().lower(),))
+            target = username.strip().lower()
+            cur.execute("SELECT id FROM users WHERE username = ?", (target,))
+            row = cur.fetchone()
+            if row:
+                cur.execute("DELETE FROM devices WHERE user_id = ?", (row["id"],))
+            cur.execute("DELETE FROM sessions WHERE username = ?", (target,))
+            cur.execute("DELETE FROM users WHERE username = ?", (target,))
             conn.commit()
             return cur.rowcount > 0
 
@@ -467,7 +533,9 @@ class Database:
                 SELECT u.id, u.username, u.role, u.display_name, u.is_active, u.created_at, u.expires_at, u.restricted_panels,
                        MAX(s.last_heartbeat) as last_seen,
                        (SELECT s2.client_version FROM sessions s2 WHERE s2.user_id = u.id AND s2.client_version IS NOT NULL AND s2.client_version != '' ORDER BY s2.last_heartbeat DESC LIMIT 1) as client_version,
-                       (SELECT e.app_version FROM error_reports e WHERE e.username = u.username AND e.app_version IS NOT NULL AND e.app_version != '' ORDER BY e.timestamp DESC LIMIT 1) as error_version
+                       (SELECT e.app_version FROM error_reports e WHERE e.username = u.username AND e.app_version IS NOT NULL AND e.app_version != '' ORDER BY e.timestamp DESC LIMIT 1) as error_version,
+                       (SELECT COUNT(*) FROM devices d WHERE d.user_id = u.id AND d.is_revoked = 0) as device_count,
+                       (SELECT MAX(s3.license_expires_at) FROM sessions s3 WHERE s3.user_id = u.id AND s3.is_revoked = 0) as license_expires_at
                 FROM users u
                 LEFT JOIN sessions s ON u.id = s.user_id
                 GROUP BY u.id, u.username, u.role, u.display_name, u.is_active, u.created_at, u.expires_at, u.restricted_panels
@@ -482,19 +550,40 @@ class Database:
                     d["restricted_panels"] = json.loads(d.get("restricted_panels") or "[]")
                 except Exception:
                     d["restricted_panels"] = []
+                d["device_count"] = int(d.get("device_count") or 0)
+                d["device_limit"] = DEVICE_LIMIT
+                license_expires = d.get("license_expires_at")
+                d["license_active"] = bool(license_expires and float(license_expires) > time.time())
+                if d["license_active"]:
+                    d["license_status"] = "active"
+                elif license_expires:
+                    d["license_status"] = "expired"
+                else:
+                    d["license_status"] = "none"
                 users.append(d)
             return users
 
-    def create_session(self, user_id: int, username: str, client_version: str = "", platform: str = "") -> str:
+    def create_session(
+        self, user_id: int, username: str, client_version: str = "", platform: str = "",
+        *, device_id: Optional[int] = None, device_fingerprint: str = "",
+        license_jti: str = "", license_expires_at: Optional[float] = None,
+    ) -> str:
         token = secrets.token_hex(24)
         token_digest = hash_token(token)
         now = time.time()
         with self._lock, self._get_conn() as conn:
             cur = conn.cursor()
             cur.execute("""
-                INSERT INTO sessions (token, user_id, username, client_version, platform, created_at, last_heartbeat, is_revoked)
-                VALUES (?, ?, ?, ?, ?, ?, ?, 0)
-            """, (token_digest, user_id, username, client_version, platform, now, now))
+                INSERT INTO sessions (
+                    token, user_id, username, client_version, platform, device_id,
+                    device_fingerprint, license_jti, license_expires_at,
+                    created_at, last_heartbeat, is_revoked
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+            """, (
+                token_digest, user_id, username, client_version, platform, device_id,
+                normalize_device_fingerprint(device_fingerprint), license_jti,
+                license_expires_at, now, now,
+            ))
             conn.commit()
         return token
 
@@ -516,7 +605,9 @@ class Database:
         with self._lock, self._get_conn() as conn:
             if not self._backend.postgres:
                 conn.execute("BEGIN IMMEDIATE")
-            sql = "SELECT u.*, s.created_at AS session_created FROM users u JOIN sessions s ON s.user_id=u.id WHERE (s.token=? OR s.token=?) AND s.is_revoked=0"
+            sql = ("SELECT u.*, s.created_at AS session_created, s.device_id AS session_device_id, "
+                   "s.device_fingerprint AS session_device_fingerprint "
+                   "FROM users u JOIN sessions s ON s.user_id=u.id WHERE (s.token=? OR s.token=?) AND s.is_revoked=0")
             if self._backend.postgres:
                 sql += " FOR UPDATE OF u, s"
             row = conn.execute(sql, (token_digest, token)).fetchone()
@@ -530,18 +621,173 @@ class Database:
             replacement = secrets.token_hex(24)
             replacement_digest = hash_token(replacement)
             now = time.time()
-            conn.execute("INSERT INTO sessions (token,user_id,username,created_at,last_heartbeat,is_revoked) VALUES (?,?,?,?,?,0)", (replacement_digest, row["id"], row["username"], now, now))
+            conn.execute("""
+                INSERT INTO sessions (
+                    token, user_id, username, device_id, device_fingerprint,
+                    created_at, last_heartbeat, is_revoked
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, 0)
+            """, (
+                replacement_digest, row["id"], row["username"],
+                row["session_device_id"], row["session_device_fingerprint"], now, now,
+            ))
             conn.commit()
             return True, replacement
 
-    def verify_and_touch_session(self, token: str, client_version: str = "", platform: str = "") -> Tuple[bool, Optional[Dict[str, Any]]]:
-        if not token or not isinstance(token, str):
-            return False, None
-        token_digest = hash_token(token)
+    def register_device(
+        self, user_id: int, username: str, fingerprint: str, *,
+        label: str = "", platform: str = "", client_version: str = "", last_ip: str = "",
+    ) -> Tuple[Optional[int], str, int]:
+        """Register or touch one of a user's two allowed devices.
+
+        Returns ``(device_id, status, active_count)``.  Status is ``existing``,
+        ``registered``, ``limit``, ``revoked``, or ``invalid``.
+        """
+        normalized = normalize_device_fingerprint(fingerprint)
+        if not normalized:
+            return None, "invalid", 0
+        with self._lock, self._get_conn() as conn:
+            if not self._backend.postgres:
+                conn.execute("BEGIN IMMEDIATE")
+            cur = conn.cursor()
+            result = self._register_device_cursor(
+                cur, user_id, username, normalized, label=label, platform=platform,
+                client_version=client_version, last_ip=last_ip,
+            )
+            conn.commit()
+            return result
+
+    def _register_device_cursor(
+        self, cur, user_id: int, username: str, fingerprint: str, *,
+        label: str = "", platform: str = "", client_version: str = "", last_ip: str = "",
+    ) -> Tuple[Optional[int], str, int]:
+        normalized = normalize_device_fingerprint(fingerprint)
+        if not normalized:
+            return None, "invalid", 0
+        if self._backend.postgres:
+            # Serialize seat allocation for one account across overlapping web
+            # instances; without this, two simultaneous logins could both see
+            # one free seat and create a third device.
+            cur.execute("SELECT id FROM users WHERE id = ? FOR UPDATE", (user_id,))
+        now = time.time()
+        clean_label = sanitize_device_label(label) if str(label or "").strip() else ""
+        cur.execute(
+            "SELECT id, is_revoked FROM devices WHERE user_id = ? AND fingerprint = ?",
+            (user_id, normalized),
+        )
+        existing = cur.fetchone()
+        if existing and not existing["is_revoked"]:
+            cur.execute("""
+                UPDATE devices
+                SET last_seen = ?, last_ip = COALESCE(NULLIF(?, ''), last_ip),
+                    client_version = COALESCE(NULLIF(?, ''), client_version),
+                    platform = COALESCE(NULLIF(?, ''), platform),
+                    label = COALESCE(NULLIF(?, ''), label)
+                WHERE id = ?
+            """, (now, last_ip, client_version, platform, clean_label, existing["id"]))
+            count = self._active_device_count_cursor(cur, user_id)
+            return int(existing["id"]), "existing", count
+        if existing and existing["is_revoked"]:
+            count = self._active_device_count_cursor(cur, user_id)
+            return None, "revoked", count
+        count = self._active_device_count_cursor(cur, user_id)
+        if count >= DEVICE_LIMIT:
+            return None, "limit", count
+        sql = """
+            INSERT INTO devices
+                (user_id, fingerprint, label, platform, first_seen, last_seen, last_ip, client_version, is_revoked)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)
+        """
+        if self._backend.postgres:
+            sql += " RETURNING id"
+        cur.execute(sql, (
+            user_id, normalized, clean_label or "Bilinmeyen cihaz",
+            platform, now, now, last_ip, client_version,
+        ))
+        row = cur.fetchone() if self._backend.postgres else None
+        device_id = int(row["id"]) if row else int(cur.lastrowid)
+        return device_id, "registered", count + 1
+
+    def _active_device_count_cursor(self, cur, user_id: int) -> int:
+        cur.execute("SELECT COUNT(*) AS count FROM devices WHERE user_id = ? AND is_revoked = 0", (user_id,))
+        row = cur.fetchone()
+        return int(row["count"] or 0) if row else 0
+
+    def list_devices(self, username: str) -> List[Dict[str, Any]]:
         with self._lock, self._get_conn() as conn:
             cur = conn.cursor()
             cur.execute("""
-                SELECT s.*, u.is_active, u.role, u.expires_at, u.restricted_panels
+                SELECT d.id, d.fingerprint, d.label, d.platform, d.first_seen, d.last_seen,
+                       d.last_ip, d.client_version, d.is_revoked
+                FROM devices d JOIN users u ON u.id = d.user_id
+                WHERE u.username = ? ORDER BY d.is_revoked ASC, d.last_seen DESC
+            """, ((username or "").strip().lower(),))
+            return [dict(r) for r in cur.fetchall()]
+
+    def reset_user_devices(self, username: str, device_id: Optional[int] = None) -> int:
+        """Revoke sessions and remove one/all bound devices for a user."""
+        target = (username or "").strip().lower()
+        with self._lock, self._get_conn() as conn:
+            if not self._backend.postgres:
+                conn.execute("BEGIN IMMEDIATE")
+            cur = conn.cursor()
+            lock_sql = "SELECT id FROM users WHERE username = ?"
+            if self._backend.postgres:
+                lock_sql += " FOR UPDATE"
+            cur.execute(lock_sql, (target,))
+            user = cur.fetchone()
+            if not user:
+                return 0
+            if device_id is None:
+                cur.execute(
+                    "UPDATE sessions SET is_revoked = 1 WHERE user_id = ?",
+                    (user["id"],),
+                )
+                cur.execute("DELETE FROM devices WHERE user_id = ?", (user["id"],))
+                removed = int(cur.rowcount or 0)
+            else:
+                cur.execute(
+                    "SELECT fingerprint FROM devices WHERE id = ? AND user_id = ?",
+                    (int(device_id), user["id"]),
+                )
+                device_row = cur.fetchone()
+                if not device_row:
+                    return 0
+                fingerprint = str(device_row["fingerprint"] or "")
+                cur.execute("DELETE FROM devices WHERE id = ? AND user_id = ?", (int(device_id), user["id"]))
+                if cur.rowcount <= 0:
+                    return 0
+                removed = 1
+                cur.execute(
+                    "UPDATE sessions SET is_revoked = 1 WHERE user_id = ? AND (device_id = ? OR device_fingerprint = ?)",
+                    (user["id"], int(device_id), fingerprint),
+                )
+            conn.commit()
+            return removed
+
+    def set_session_license(self, token: str, license_jti: str, expires_at: Optional[float]) -> None:
+        if not token or not isinstance(token, str):
+            return
+        with self._lock, self._get_conn() as conn:
+            conn.execute(
+                "UPDATE sessions SET license_jti = ?, license_expires_at = ? WHERE token = ? OR token = ?",
+                (str(license_jti or ""), expires_at, hash_token(token), token),
+            )
+            conn.commit()
+
+    def verify_and_touch_session(
+        self, token: str, client_version: str = "", platform: str = "",
+        *, device_fingerprint: str = "", device_label: str = "", last_ip: str = "",
+    ) -> Tuple[bool, Optional[Dict[str, Any]]]:
+        if not token or not isinstance(token, str):
+            return False, None
+        token_digest = hash_token(token)
+        requested_fp = normalize_device_fingerprint(device_fingerprint)
+        with self._lock, self._get_conn() as conn:
+            if not self._backend.postgres:
+                conn.execute("BEGIN IMMEDIATE")
+            cur = conn.cursor()
+            cur.execute("""
+                SELECT s.*, u.is_active, u.role, u.display_name, u.expires_at, u.restricted_panels
                 FROM sessions s
                 JOIN users u ON s.user_id = u.id
                 WHERE (s.token = ? OR s.token = ?) AND s.is_revoked = 0
@@ -566,32 +812,132 @@ class Database:
                 conn.commit()
                 return False, None
 
+            bound_fp = str(data.get("device_fingerprint") or "").strip().lower()
+            device_id = data.get("device_id")
+            if bound_fp:
+                # A token copied to another machine fails here even if the file
+                # contains a valid unexpired license.
+                if not requested_fp or not hmac.compare_digest(bound_fp, requested_fp):
+                    return False, None
+                if device_id is None:
+                    # Recover a device association if an older session stored
+                    # only the fingerprint.  Never accept a fingerprint that
+                    # has no corresponding active device row.
+                    cur.execute(
+                        "SELECT id FROM devices WHERE user_id = ? AND fingerprint = ? AND is_revoked = 0",
+                        (data["user_id"], bound_fp),
+                    )
+                    device_row = cur.fetchone()
+                    if device_row:
+                        device_id = int(device_row["id"])
+                        cur.execute(
+                            "UPDATE sessions SET device_id = ? WHERE token = ? OR token = ?",
+                            (device_id, token_digest, token),
+                        )
+                if device_id is not None:
+                    cur.execute(
+                        "SELECT id FROM devices WHERE id = ? AND user_id = ? AND fingerprint = ? AND is_revoked = 0",
+                        (device_id, data["user_id"], bound_fp),
+                    )
+                if device_id is None or not cur.fetchone():
+                    cur.execute(
+                        "UPDATE sessions SET is_revoked = 1 WHERE token = ? OR token = ?",
+                        (token_digest, token),
+                    )
+                    conn.commit()
+                    return False, None
+                cur.execute("""
+                    UPDATE devices
+                    SET last_seen = ?, last_ip = COALESCE(NULLIF(?, ''), last_ip),
+                        client_version = COALESCE(NULLIF(?, ''), client_version),
+                        platform = COALESCE(NULLIF(?, ''), platform),
+                        label = COALESCE(NULLIF(?, ''), label)
+                    WHERE id = ?
+                """, (
+                    time.time(), last_ip, client_version, platform,
+                    sanitize_device_label(device_label) if str(device_label or "").strip() else "",
+                    device_id,
+                ))
+            elif requested_fp:
+                if REQUIRE_DEVICE_BINDING:
+                    # A session created before device binding cannot prove
+                    # which machine originally logged in.  In strict mode do
+                    # not let a copied legacy token attach itself to a new
+                    # device; require a fresh password login instead.
+                    cur.execute(
+                        "UPDATE sessions SET is_revoked = 1 WHERE token = ? OR token = ?",
+                        (token_digest, token),
+                    )
+                    conn.commit()
+                    return False, None
+                # Upgrade a pre-device-binding session after the client update.
+                new_device_id, status, _ = self._register_device_cursor(
+                    cur, data["user_id"], data["username"], requested_fp,
+                    label=device_label, platform=platform, client_version=client_version,
+                    last_ip=last_ip,
+                )
+                if status in ("limit", "revoked"):
+                    conn.commit()
+                    return False, None
+                if new_device_id is not None:
+                    device_id = new_device_id
+                    bound_fp = requested_fp
+                    cur.execute(
+                        "UPDATE sessions SET device_id = ?, device_fingerprint = ? WHERE token = ? OR token = ?",
+                        (device_id, bound_fp, token_digest, token),
+                    )
+            elif device_id is not None:
+                # Legacy session that was already associated with a device by
+                # the old code; keep it usable only while that row is active.
+                cur.execute(
+                    "SELECT id FROM devices WHERE id = ? AND user_id = ? AND is_revoked = 0",
+                    (device_id, data["user_id"]),
+                )
+                if not cur.fetchone():
+                    cur.execute(
+                        "UPDATE sessions SET is_revoked = 1 WHERE token = ? OR token = ?",
+                        (token_digest, token),
+                    )
+                    conn.commit()
+                    return False, None
+
             now = time.time()
-            if client_version and platform:
+            fields = ["last_heartbeat = ?"]
+            params: List[Any] = [now]
+            if client_version:
+                fields.append("client_version = ?")
+                params.append(client_version)
+            if platform:
+                fields.append("platform = ?")
+                params.append(platform)
+            if device_id is not None and not data.get("device_id"):
+                fields.append("device_id = ?")
+                params.append(device_id)
+            if bound_fp and not data.get("device_fingerprint"):
+                fields.append("device_fingerprint = ?")
+                params.append(bound_fp)
+            params.extend([token_digest, token])
+            cur.execute(
+                f"UPDATE sessions SET {', '.join(fields)} WHERE token = ? OR token = ?",
+                tuple(params),
+            )
+            if device_id is not None:
+                clean_device_label = sanitize_device_label(device_label) if str(device_label or "").strip() else ""
                 cur.execute("""
-                    UPDATE sessions
-                    SET last_heartbeat = ?, client_version = ?, platform = ?
-                    WHERE token = ? OR token = ?
-                """, (now, client_version, platform, token_digest, token))
-            elif client_version:
-                cur.execute("""
-                    UPDATE sessions
-                    SET last_heartbeat = ?, client_version = ?
-                    WHERE token = ? OR token = ?
-                """, (now, client_version, token_digest, token))
-            elif platform:
-                cur.execute("""
-                    UPDATE sessions
-                    SET last_heartbeat = ?, platform = ?
-                    WHERE token = ? OR token = ?
-                """, (now, platform, token_digest, token))
-            else:
-                cur.execute("UPDATE sessions SET last_heartbeat = ? WHERE token = ? OR token = ?", (now, token_digest, token))
+                    UPDATE devices
+                    SET last_seen = ?, last_ip = COALESCE(NULLIF(?, ''), last_ip),
+                        client_version = COALESCE(NULLIF(?, ''), client_version),
+                        platform = COALESCE(NULLIF(?, ''), platform),
+                        label = COALESCE(NULLIF(?, ''), label)
+                    WHERE id = ? AND user_id = ?
+                """, (now, last_ip, client_version, platform, clean_device_label, device_id, data["user_id"]))
             conn.commit()
             if client_version:
                 data["client_version"] = client_version
             if platform:
                 data["platform"] = platform
+            data["device_id"] = device_id
+            data["device_fingerprint"] = bound_fp
             return True, data
 
     def record_error(
@@ -796,7 +1142,9 @@ class Database:
             cur.execute("""
                 SELECT u.id, u.username, u.role, u.display_name, u.is_active, u.created_at, u.expires_at, u.restricted_panels,
                        MAX(s.last_heartbeat) as last_seen,
-                       (SELECT s2.client_version FROM sessions s2 WHERE s2.user_id = u.id AND s2.client_version IS NOT NULL AND s2.client_version != '' ORDER BY s2.last_heartbeat DESC LIMIT 1) as client_version
+                       (SELECT s2.client_version FROM sessions s2 WHERE s2.user_id = u.id AND s2.client_version IS NOT NULL AND s2.client_version != '' ORDER BY s2.last_heartbeat DESC LIMIT 1) as client_version,
+                       (SELECT COUNT(*) FROM devices d WHERE d.user_id = u.id AND d.is_revoked = 0) as device_count,
+                       (SELECT MAX(s3.license_expires_at) FROM sessions s3 WHERE s3.user_id = u.id AND s3.is_revoked = 0) as license_expires_at
                 FROM users u
                 LEFT JOIN sessions s ON u.id = s.user_id
                 WHERE u.username = ?
@@ -810,9 +1158,22 @@ class Database:
                 detail["restricted_panels"] = json.loads(detail.get("restricted_panels") or "[]")
             except Exception:
                 detail["restricted_panels"] = []
+            detail["device_count"] = int(detail.get("device_count") or 0)
+            detail["device_limit"] = DEVICE_LIMIT
+            detail["license_active"] = bool(
+                detail.get("license_expires_at") and float(detail["license_expires_at"]) > time.time()
+            )
 
             cur.execute("""
-                SELECT client_version, platform, created_at, last_heartbeat, is_revoked
+                SELECT id, fingerprint, label, platform, first_seen, last_seen, last_ip,
+                       client_version, is_revoked
+                FROM devices WHERE user_id = ? ORDER BY is_revoked ASC, last_seen DESC
+            """, (detail["id"],))
+            detail["devices"] = [dict(r) for r in cur.fetchall()]
+
+            cur.execute("""
+                SELECT client_version, platform, created_at, last_heartbeat, is_revoked,
+                       device_id, license_expires_at
                 FROM sessions WHERE user_id = ? ORDER BY last_heartbeat DESC LIMIT 20
             """, (detail["id"],))
             detail["sessions"] = [dict(r) for r in cur.fetchall()]
@@ -1005,14 +1366,15 @@ class ControlPlaneHandler(http.server.BaseHTTPRequestHandler):
     def _client_ip(self) -> str:
         peer_ip_str = ""
         is_peer_trusted = False
-        if self.client_address and len(self.client_address) > 0:
+        client_address = getattr(self, "client_address", None) or ()
+        if client_address and len(client_address) > 0:
             try:
-                peer_obj = ipaddress.ip_address(str(self.client_address[0]))
+                peer_obj = ipaddress.ip_address(str(client_address[0]))
                 peer_ip_str = str(peer_obj)
                 # Loopback (127.0.0.1, ::1) is trusted local reverse proxy (e.g. Nginx, Render proxy)
                 is_peer_trusted = peer_obj.is_loopback
             except ValueError:
-                peer_ip_str = str(self.client_address[0])
+                peer_ip_str = str(client_address[0])
 
         # Cloudflare / trusted edge headers if peer is trusted proxy
         if is_peer_trusted:
@@ -1123,6 +1485,34 @@ class ControlPlaneHandler(http.server.BaseHTTPRequestHandler):
             return auth_header[7:].strip()
         return ""
 
+    def _issue_license_for(self, user: Dict[str, Any], device_fingerprint: str):
+        """Issue a signed license when the service has a private key configured."""
+        signer = getattr(self.db, "license_signer", None)
+        fingerprint = normalize_device_fingerprint(device_fingerprint)
+        if not signer or not signer.configured or not fingerprint:
+            return None, None
+        return signer.issue(
+            username=str(user.get("username") or ""),
+            role=str(user.get("role") or "tester"),
+            display_name=str(user.get("display_name") or ""),
+            device_fingerprint=fingerprint,
+        )
+
+    def _license_response_fields(self, user: Dict[str, Any], device_fp: str, session_token: str = "") -> Dict[str, Any]:
+        license_token, payload = self._issue_license_for(user, device_fp)
+        if license_token and payload:
+            if session_token:
+                self.db.set_session_license(
+                    session_token, str(payload.get("jti") or ""), float(payload.get("exp") or 0),
+                )
+            return {
+                "license": license_token,
+                "license_expires_at": float(payload["exp"]),
+                "license_jti": payload.get("jti", ""),
+                "license_key_id": getattr(getattr(self.db, "license_signer", None), "key_id", ""),
+            }
+        return {}
+
     def do_OPTIONS(self) -> None:
         allowed_origin = self._get_allowed_origin()
         self.send_response(204)
@@ -1146,6 +1536,8 @@ class ControlPlaneHandler(http.server.BaseHTTPRequestHandler):
                 "service": "SerpentStudio-ControlPlane",
                 "version": CURRENT_SERVER_VERSION,
                 "latest_client_version": CURRENT_SERVER_VERSION,
+                "device_limit": DEVICE_LIMIT,
+                "license_signing": bool(getattr(self.db, "license_signer", None) and self.db.license_signer.configured),
                 "time": time.time(),
             })
             return
@@ -1156,6 +1548,10 @@ class ControlPlaneHandler(http.server.BaseHTTPRequestHandler):
                 "server_version": CURRENT_SERVER_VERSION,
                 "latest_client_version": CURRENT_SERVER_VERSION,
                 "minimum_client_version": "v1.2.0.0",
+                "device_limit": DEVICE_LIMIT,
+                "license_ttl_days": LICENSE_TTL_SECONDS // 86400,
+                "heartbeat_interval_seconds": HEARTBEAT_INTERVAL_SECONDS,
+                "license_signing": bool(getattr(self.db, "license_signer", None) and self.db.license_signer.configured),
                 "time": time.time(),
             })
             return
@@ -1205,6 +1601,38 @@ class ControlPlaneHandler(http.server.BaseHTTPRequestHandler):
 
             if path == "/admin/api/announcements":
                 self._send_json(200, {"status": "ok", "announcements": self.db.list_announcements()})
+                return
+
+            if path == "/admin/api/system/status":
+                signer = getattr(self.db, "license_signer", None)
+                self._send_json(200, {
+                    "status": "ok",
+                    "server_version": CURRENT_SERVER_VERSION,
+                    "license_signing": bool(signer and signer.configured),
+                    "license_key_id": getattr(signer, "key_id", ""),
+                    "license_public_key_fingerprint": getattr(signer, "public_key_fingerprint", ""),
+                    "license_ttl_days": LICENSE_TTL_SECONDS // 86400,
+                    "heartbeat_hours": HEARTBEAT_INTERVAL_SECONDS // 3600,
+                    "session_days": SESSION_MAX_AGE // 86400,
+                    "device_limit": DEVICE_LIMIT,
+                    "require_device_binding": REQUIRE_DEVICE_BINDING,
+                })
+                return
+
+            if path == "/admin/api/users/devices":
+                query_params = urllib.parse.parse_qs(parsed.query)
+                target_user = (query_params.get("username", [""])[0] or "").strip().lower()
+                if not target_user:
+                    self._send_json(400, {"status": "error", "message": "username is required."})
+                    return
+                devices = self.db.list_devices(target_user)
+                self._send_json(200, {
+                    "status": "ok",
+                    "username": target_user,
+                    "devices": devices,
+                    "device_count": len([d for d in devices if not d.get("is_revoked")]),
+                    "device_limit": DEVICE_LIMIT,
+                })
                 return
 
             if path.startswith("/admin/api/script/"):
@@ -1273,10 +1701,54 @@ class ControlPlaneHandler(http.server.BaseHTTPRequestHandler):
 
             expires_at = user.get("expires_at")
             if expires_at and time.time() > expires_at:
-                self._send_json(403, {"status": "error", "message": "Account license expired."})
+                self._send_json(403, {"status": "error", "message": "Hesabınızın kullanım süresi dolmuş. Yöneticiyle iletişime geçin."})
                 return
 
-            token = self.db.create_session(user["id"], user["username"], client_version, platform)
+            device_fp = normalize_device_fingerprint(body.get("device_fingerprint"))
+            device_label = sanitize_device_label(body.get("device_label"), fallback="Masaüstü cihaz")
+            if REQUIRE_DEVICE_BINDING and not device_fp:
+                self._send_json(403, {
+                    "status": "error",
+                    "code": "device_required",
+                    "message": "Bu hesap cihaz doğrulaması gerektiriyor. Lütfen Serpent Studio'yu resmi kanaldan güncelleyin.",
+                })
+                return
+
+            device_id: Optional[int] = None
+            device_count = 0
+            if device_fp:
+                device_id, device_status, device_count = self.db.register_device(
+                    user["id"], user["username"], device_fp,
+                    label=device_label, platform=platform,
+                    client_version=client_version, last_ip=client_ip,
+                )
+                if device_status == "limit":
+                    self._send_json(403, {
+                        "status": "error",
+                        "code": "device_limit",
+                        "message": (
+                            f"Cihaz sınırı: Bu hesap en fazla {DEVICE_LIMIT} cihaza bağlanabilir. "
+                            "Yeni bir cihaz için yöneticiden cihaz sıfırlaması isteyin."
+                        ),
+                        "device_limit": DEVICE_LIMIT,
+                        "device_count": device_count,
+                    })
+                    return
+                if device_status in ("revoked", "invalid"):
+                    self._send_json(403, {
+                        "status": "error",
+                        "code": "device_rejected",
+                        "message": "Bu cihazın erişimi kaldırılmış. Yöneticiyle iletişime geçin.",
+                    })
+                    return
+            else:
+                device_count = len([d for d in self.db.list_devices(user["username"]) if not d.get("is_revoked")])
+
+            token = self.db.create_session(
+                user["id"], user["username"], client_version, platform,
+                device_id=device_id, device_fingerprint=device_fp,
+            )
+            license_fields = self._license_response_fields(user, device_fp, token) if device_fp else {}
             try:
                 restricted_panels = json.loads(user.get("restricted_panels") or "[]")
             except Exception:
@@ -1293,6 +1765,11 @@ class ControlPlaneHandler(http.server.BaseHTTPRequestHandler):
                     "restricted_panels": restricted_panels,
                 },
                 "restricted_panels": restricted_panels,
+                "device_fingerprint": device_fp,
+                "device_limit": DEVICE_LIMIT,
+                "device_count": device_count,
+                "device_binding": "bound" if device_fp else "legacy",
+                **license_fields,
             })
             return
 
@@ -1301,12 +1778,26 @@ class ControlPlaneHandler(http.server.BaseHTTPRequestHandler):
             token = self._get_bearer_token() or str(body.get("token", ""))
             client_version = str(body.get("client_version") or "").strip()
             platform = str(body.get("platform") or "").strip()
-            valid, session_data = self.db.verify_and_touch_session(token, client_version=client_version, platform=platform)
+            device_fp = normalize_device_fingerprint(body.get("device_fingerprint"))
+            device_label = sanitize_device_label(body.get("device_label"), fallback="Masaüstü cihaz")
+            valid, session_data = self.db.verify_and_touch_session(
+                token, client_version=client_version, platform=platform,
+                device_fingerprint=device_fp, device_label=device_label,
+                last_ip=self._client_ip(),
+            )
             if not valid or not session_data:
                 self._send_json(403, {
                     "status": "suspended",
                     "account_status": "suspended",
-                    "message": "Hesabınız yönetici tarafından askıya alınmıştır veya oturum sonlandırılmıştır."
+                    "message": "Hesabınız yönetici tarafından askıya alınmıştır, cihaz sıfırlanmıştır veya oturum sonlandırılmıştır."
+                })
+                return
+            if REQUIRE_DEVICE_BINDING and not device_fp and not session_data.get("device_fingerprint"):
+                self._send_json(403, {
+                    "status": "suspended",
+                    "code": "device_required",
+                    "account_status": "suspended",
+                    "message": "Bu oturum cihaz doğrulaması içermiyor. Lütfen Serpent Studio'yu güncelleyip yeniden giriş yapın.",
                 })
                 return
 
@@ -1323,25 +1814,53 @@ class ControlPlaneHandler(http.server.BaseHTTPRequestHandler):
                 except Exception:
                     pass
 
+            license_user = {
+                "username": session_data["username"],
+                "role": session_data.get("role", "tester"),
+                "display_name": session_data.get("display_name", ""),
+            }
+            license_fields = self._license_response_fields(license_user, device_fp, token) if device_fp else {}
+            device_count = len([
+                d for d in self.db.list_devices(session_data["username"]) if not d.get("is_revoked")
+            ])
             self._send_json(200, {
                 "status": "ok",
                 "account_status": "active",
                 "username": session_data["username"],
                 "role": session_data.get("role", "tester"),
+                "display_name": session_data.get("display_name", ""),
                 "restricted_panels": restricted_panels,
                 "announcements": self.db.pending_announcements(session_data["username"]),
+                "device_fingerprint": device_fp,
+                "device_limit": DEVICE_LIMIT,
+                "device_count": device_count,
+                **license_fields,
                 "message": "Heartbeat acknowledged"
             })
             return
 
         if path == "/v1/auth/change-password":
             token = self._get_bearer_token()
-            valid, _ = self.db.verify_and_touch_session(token)
-            if not valid:
+            device_fp = normalize_device_fingerprint(body.get("device_fingerprint"))
+            device_label = sanitize_device_label(body.get("device_label"), fallback="Masaüstü cihaz")
+            valid, session_data = self.db.verify_and_touch_session(
+                token, device_fingerprint=device_fp, device_label=device_label,
+                last_ip=self._client_ip(),
+            )
+            if not valid or not session_data:
                 self._send_json(401, {"status": "error", "message": "Sign in again to change your password."})
                 return
             ok, result = self.db.change_user_password(token, str(body.get("current_password", "")), str(body.get("new_password", "")))
-            self._send_json(200 if ok else 403, {"status": "ok", "token": result} if ok else {"status": "error", "message": result})
+            if not ok:
+                self._send_json(403, {"status": "error", "message": result})
+                return
+            license_user = {
+                "username": session_data["username"],
+                "role": session_data.get("role", "tester"),
+                "display_name": session_data.get("display_name", ""),
+            }
+            license_fields = self._license_response_fields(license_user, device_fp, result) if device_fp else {}
+            self._send_json(200, {"status": "ok", "token": result, **license_fields})
             return
 
         if path in ("/v1/auth/logout", "/admin/api/logout"):
@@ -1450,14 +1969,45 @@ class ControlPlaneHandler(http.server.BaseHTTPRequestHandler):
 
             if path == "/admin/api/users/create":
                 panels = body.get("restricted_panels", [])
+                expires_at = None
+                raw_days = body.get("expires_in_days")
+                if raw_days not in (None, "", "0", 0):
+                    try:
+                        days = float(raw_days)
+                        if days > 0:
+                            expires_at = time.time() + days * 86400.0
+                    except (TypeError, ValueError):
+                        expires_at = None
                 ok, msg = self.db.create_user(
                     username=str(body.get("username", "")),
                     password=str(body.get("password", "")),
                     role=str(body.get("role", "tester")),
                     display_name=str(body.get("display_name", "")),
+                    expires_at=expires_at,
                     restricted_panels=panels if isinstance(panels, list) else [],
                 )
                 self._send_json(200 if ok else 400, {"status": "ok" if ok else "error", "message": msg})
+                return
+
+            if path == "/admin/api/users/reset-device":
+                u = str(body.get("username", "")).strip().lower()
+                raw_device_id = body.get("device_id")
+                device_id = None
+                if raw_device_id not in (None, "", "all"):
+                    try:
+                        device_id = int(raw_device_id)
+                    except (TypeError, ValueError):
+                        self._send_json(400, {"status": "error", "message": "Invalid device id."})
+                        return
+                removed = self.db.reset_user_devices(u, device_id)
+                if removed:
+                    self._send_json(200, {
+                        "status": "ok",
+                        "message": "Cihaz sıfırlandı ve ilgili oturumlar kapatıldı." if device_id else "Tüm cihazlar sıfırlandı ve oturumlar kapatıldı.",
+                        "devices_removed": removed,
+                    })
+                else:
+                    self._send_json(404, {"status": "error", "message": "Kullanıcı veya cihaz bulunamadı."})
                 return
 
             if path == "/admin/api/users/set-restrictions":
@@ -1766,6 +2316,7 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
     .stat-card.card-ochre:hover::after { background: var(--ochre-light); }
     .stat-card.card-terracotta:hover::after { background: var(--terracotta); }
     .stat-card.card-glacial:hover::after { background: var(--stream-light); }
+    .stat-card.card-sapphire:hover::after { background: var(--sapphire); }
     
     .stat-info h4 {
       font-size: 11.5px;
@@ -2324,6 +2875,16 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
         </div>
       </div>
+      <div class="stat-card card-sapphire">
+        <div class="stat-info">
+          <h4>Bağlı Cihazlar</h4>
+          <div class="stat-number" id="statDevicesCount" style="color: var(--sapphire-deep);">0</div>
+          <div class="stat-sub" id="statDevicesSub">0 / 2 kapasite · 0 lisanslı</div>
+        </div>
+        <div class="stat-icon stat-icon-glacial" title="Cihaz Bağlama ve Lisans Durumu">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="14" height="10" rx="2"/><path d="M7 20h4"/><path d="M9 14v6"/><rect x="18" y="8" width="4" height="12" rx="1"/></svg>
+        </div>
+      </div>
     </div>
 
     <!-- VERSION DISTRIBUTION CARD -->
@@ -2336,7 +2897,10 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
           </div>
           <div class="card-subtitle">Testerların son bildirdiği uygulama sürümleri; güncelleme adaptasyonunu tek bakışta gösterir.</div>
         </div>
-        <span class="badge" id="versionSummaryBadge" style="background: rgba(2, 132, 199, 0.10); color: #0369A1; border: 1px solid rgba(2, 132, 199, 0.30);">-</span>
+        <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+          <span class="badge" id="licenseStatusBadge" title="Sunucu lisans imzalama ve cihaz politikası durumu">Lisans: kontrol ediliyor…</span>
+          <span class="badge" id="versionSummaryBadge" style="background: rgba(2, 132, 199, 0.10); color: #0369A1; border: 1px solid rgba(2, 132, 199, 0.30);">-</span>
+        </div>
       </div>
       <div id="versionBars" style="display: flex; flex-direction: column; gap: 8px; margin-top: 14px;"></div>
     </div>
@@ -2370,15 +2934,16 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
               Yeni Tester / Kullanıcı Oluştur
             </div>
-            <div class="card-subtitle">Belirleyeceğiniz hesap ve şifre masaüstü uygulamasında anında geçerli olur (uygulama güncellemesi gerektirmez).</div>
+            <div class="card-subtitle">Hesap ve en az 12 karakterlik ilk şifre masaüstü uygulamasında anında geçerli olur. Kullanıcı ilk girişte kendi cihazına bağlanır.</div>
           </div>
         </div>
         
         <div class="form-row">
           <input type="text" id="newUsername" placeholder="Kullanıcı Adı (örn: tester_ali)" style="flex:1; min-width: 160px;">
-          <input type="password" id="newPassword" placeholder="İlk Şifre (en az 6 karakter)" style="flex:1; min-width: 160px;">
+          <input type="password" id="newPassword" placeholder="İlk Şifre (en az 12 karakter)" style="flex:1; min-width: 170px;">
           <input type="text" id="newDisplayName" placeholder="İsim (örn: Ali Mühendis)" style="flex:1; min-width: 160px;">
-          <input type="text" id="newRole" placeholder="Rol / Keyword (örn: tester)" value="tester" style="flex:1; min-width: 150px;">
+          <input type="text" id="newRole" placeholder="Rol / Keyword (örn: tester)" value="tester" style="flex:1; min-width: 140px;">
+          <input type="number" id="newExpiryDays" min="0" step="1" placeholder="Süre (gün, boş=limitsiz)" title="Hesap kullanım süresi; boş veya 0 limitsiz" style="flex:1; min-width: 160px;">
           <button class="btn" onclick="createUser()">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
             Kullanıcıyı Kaydet
@@ -2395,6 +2960,27 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
           <span class="pill-btn" onclick="setRole('proje-ekibi')">+ Proje Ekibi</span>
           <span class="pill-btn" onclick="setRole('misafir')">+ Misafir</span>
           <span class="pill-btn" onclick="setRole('administrator')">+ Yönetici</span>
+        </div>
+      </div>
+
+      <div class="card" style="border-left: 3px solid var(--sapphire);">
+        <div class="card-header">
+          <div>
+            <div class="card-title">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+              Cihaz, Lisans ve Nabız Politikası
+            </div>
+            <div class="card-subtitle">Bu değerler sunucu tarafından uygulanır; masaüstü istemcisinde değiştirilemez.</div>
+          </div>
+          <span class="badge" id="licenseSigningBadge">Lisans imzalama: kontrol ediliyor…</span>
+        </div>
+        <div id="policyGrid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 10px;">
+          <div style="background: var(--surface-hover); border: 1px solid var(--border-stone); border-radius: 9px; padding: 10px 12px;"><strong>Cihaz sınırı</strong><br><span style="font-size: 18px; font-weight: 700; color: var(--sapphire-deep);" id="policyDeviceLimit">2</span> <span style="font-size: 11px; color: var(--text-muted);">cihaz / hesap</span></div>
+          <div style="background: var(--surface-hover); border: 1px solid var(--border-stone); border-radius: 9px; padding: 10px 12px;"><strong>Lisans geçerliliği</strong><br><span style="font-size: 18px; font-weight: 700; color: var(--sapphire-deep);" id="policyLicenseDays">30</span> <span style="font-size: 11px; color: var(--text-muted);">gün, otomatik yenilenir</span></div>
+          <div style="background: var(--surface-hover); border: 1px solid var(--border-stone); border-radius: 9px; padding: 10px 12px;"><strong>Nabız aralığı</strong><br><span style="font-size: 18px; font-weight: 700; color: var(--sapphire-deep);" id="policyHeartbeatHours">6</span> <span style="font-size: 11px; color: var(--text-muted);">saat</span></div>
+          <div style="background: var(--surface-hover); border: 1px solid var(--border-stone); border-radius: 9px; padding: 10px 12px;"><strong>Çevrimdışı kullanım</strong><br><span style="font-size: 18px; font-weight: 700; color: var(--sapphire-deep);">Lisans bitişine kadar</span><br><span style="font-size: 11px; color: var(--text-muted);">çevrimiçi nabızda otomatik yenilenir</span></div>
+          <div style="background: var(--surface-hover); border: 1px solid var(--border-stone); border-radius: 9px; padding: 10px 12px;"><strong>Oturum üst sınırı</strong><br><span style="font-size: 18px; font-weight: 700; color: var(--sapphire-deep);" id="policySessionDays">90</span> <span style="font-size: 11px; color: var(--text-muted);">gün</span></div>
+          <div style="background: var(--surface-hover); border: 1px solid var(--border-stone); border-radius: 9px; padding: 10px 12px;"><strong>Katı cihaz doğrulama</strong><br><span style="font-size: 18px; font-weight: 700; color: var(--sapphire-deep);" id="policyRequireBinding">-</span><br><span style="font-size: 11px; color: var(--text-muted);">parmak izsiz giriş reddi</span></div>
         </div>
       </div>
 
@@ -2426,13 +3012,14 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
                 <th>Rol / Keyword</th>
                 <th>Durum</th>
                 <th>Son Sürüm</th>
+                <th>Cihaz / Lisans</th>
                 <th>Panel Kısıtları</th>
                 <th>Son Görülme</th>
                 <th>İşlemler</th>
               </tr>
             </thead>
             <tbody id="usersTableBody">
-              <tr><td colspan="8" style="text-align: center; color: var(--text-muted); padding: 20px;">Yükleniyor...</td></tr>
+              <tr><td colspan="9" style="text-align: center; color: var(--text-muted); padding: 20px;">Yükleniyor...</td></tr>
             </tbody>
           </table>
         </div>
@@ -2539,7 +3126,7 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l18-5v12L3 14v-3z"/><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"/></svg>
               Yeni Duyuru Gönder
             </div>
-            <div class="card-subtitle">Mesaj, masaüstü uygulamasının canlı heartbeat'i (en geç 60 sn) ile uygulama yeniden başlatılmadan kullanıcılara bildirim olarak gösterilir.</div>
+            <div class="card-subtitle">Mesaj, masaüstü uygulamasının bir sonraki nabzında (yaklaşık 6 saat) veya uygulama yeniden açıldığında kullanıcılara gösterilir.</div>
           </div>
         </div>
         <textarea id="announcementMessage" rows="3" placeholder="Duyuru metni (örn: Bu akşam 21:00-22:00 arası bakım yapılacaktır, lütfen çalışmalarınızı kaydedin)..." style="max-width: 820px;"></textarea>
@@ -2639,7 +3226,7 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
       </div>
 
       <div style="background: var(--ochre-subtle); border: 1px solid var(--ochre-border); border-radius: 10px; padding: 12px 16px; margin: 14px 0; font-size: 13px; color: #92400E; line-height: 1.45;">
-        <strong>İşleyiş Kuralı:</strong> İşaretlediğiniz paneller kullanıcının masaüstü uygulamasında anında devre dışı bırakılır ve gizlenir. Canlı heartbeat (en geç 60 sn) ile uygulama yeniden başlatılmadan devreye girer.
+        <strong>İşleyiş Kuralı:</strong> İşaretlediğiniz paneller kullanıcının masaüstü uygulamasında bir sonraki nabızda (yaklaşık 6 saat) veya uygulama yeniden açıldığında devre dışı bırakılır ve gizlenir.
       </div>
 
       <!-- Quick Preset Buttons -->
@@ -2664,6 +3251,41 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
     </div>
   </div>
 
+  <!-- MODAL: USER DEVICES -->
+  <div class="modal" id="devicesModal">
+    <div class="modal-content" style="max-width: 860px; width: 95%;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; gap: 10px; flex-wrap: wrap;">
+        <div>
+          <h3 style="color: var(--text-main); font-size: 16px; font-weight: 600; display: flex; align-items: center; gap: 8px;">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--sapphire)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="14" height="10" rx="2"/><path d="M7 20h4"/><path d="M9 14v6"/><rect x="18" y="8" width="4" height="12" rx="1"/></svg>
+            Cihaz Bağlama ve Lisans
+          </h3>
+          <p style="color: var(--text-muted); font-size: 13px; margin-top: 3px;">
+            Kullanıcı: <strong id="devicesModalUsername" style="color: var(--pine-light);"></strong>
+            <span id="devicesModalCapacity" style="margin-left: 8px;"></span>
+          </p>
+        </div>
+        <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+          <button class="btn btn-sm btn-danger" onclick="resetUserDevices('', true)">Tümünü Sıfırla</button>
+          <button class="btn btn-sm btn-secondary" onclick="closeDevicesModal()">Kapat</button>
+        </div>
+      </div>
+      <div style="background: var(--stream-subtle); border: 1px solid var(--stream-border); border-radius: 9px; padding: 10px 12px; margin: 12px 0; font-size: 12px; color: var(--text-soft); line-height: 1.5;">
+        Bir hesap en fazla <strong>2 cihaz</strong> kullanabilir. Cihaz sıfırlama, o cihazın oturumlarını kapatır ve yeni cihaz bağlanmasına yer açar. Wi-Fi/IP değişikliği cihazı bozmaz; donanım/işletim sistemi yeniden kurulumu yeni cihaz sayılabilir.
+      </div>
+      <div class="table-container" style="margin: 0;">
+        <table>
+          <thead>
+            <tr><th>Cihaz</th><th>Parmak İzi</th><th>Platform</th><th>İlk Görülme</th><th>Son Görülme</th><th>Durum</th><th>İşlem</th></tr>
+          </thead>
+          <tbody id="devicesTableBody">
+            <tr><td colspan="7" style="text-align: center; color: var(--text-muted); padding: 20px;">Cihazlar yükleniyor…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
   <!-- MODAL: USER DETAIL -->
   <div class="modal" id="userDetailModal">
     <div class="modal-content" style="max-width: 980px; width: 95%;">
@@ -2673,11 +3295,24 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
       </div>
       <div id="userDetailSummary" style="display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px;"></div>
 
+      <div style="display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; margin: 12px 0 8px;">
+        <div style="font-size: 13px; font-weight: 700; color: var(--text-main);">Bağlı Cihazlar <span id="userDetailDeviceCount" style="color: var(--text-muted); font-weight: 500;"></span></div>
+        <button class="btn btn-sm btn-danger" onclick="resetUserDevices('', true)">Tüm Cihazları Sıfırla</button>
+      </div>
+      <div class="table-container" style="margin: 0 0 16px;">
+        <table>
+          <thead>
+            <tr><th>Cihaz</th><th>Parmak İzi</th><th>Platform</th><th>İlk Görülme</th><th>Son Görülme</th><th>Durum</th><th>İşlem</th></tr>
+          </thead>
+          <tbody id="userDetailDevices"></tbody>
+        </table>
+      </div>
+
       <div style="font-size: 13px; font-weight: 700; color: var(--text-main); margin: 12px 0 8px;">Aktif / Kapatılmış Oturumlar</div>
       <div class="table-container" style="margin: 0 0 16px;">
         <table>
           <thead>
-            <tr><th>Oluşturulma</th><th>Son Nabız</th><th>Sürüm</th><th>Platform</th><th>Durum</th></tr>
+            <tr><th>Oluşturulma</th><th>Son Nabız</th><th>Sürüm</th><th>Platform</th><th>Lisans Bitişi</th><th>Durum</th></tr>
           </thead>
           <tbody id="userDetailSessions"></tbody>
         </table>
@@ -2721,6 +3356,11 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
     let lastUsersRendered = [];
     let lastErrorsRendered = [];
     let lastScriptsRendered = [];
+    let systemStatusCache = {};
+    let currentDevicesUser = '';
+    let currentDevicesCache = [];
+    let currentUserDetail = null;
+    let userDetailUsername = '';
 
     const AVAILABLE_PANELS = [
       { id: 'materials', name: 'Malzeme Editörü', icon: '🧪', desc: 'Malzeme tanımlama kartları, izotop kütüphaneleri ve kompozisyon' },
@@ -2893,6 +3533,59 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
       if (elECount) elECount.textContent = errorsCache.length;
       const elSCount = document.getElementById('statScriptsCount');
       if (elSCount) elSCount.textContent = scriptsCache.length;
+
+      const totalDevices = usersCache.reduce((sum, u) => sum + (parseInt(u.device_count, 10) || 0), 0);
+      const licensedUsers = usersCache.filter(u => !!u.license_active).length;
+      const capacity = totalUsers * (parseInt((systemStatusCache || {}).device_limit, 10) || 2);
+      const elDCount = document.getElementById('statDevicesCount');
+      if (elDCount) elDCount.textContent = totalDevices;
+      const elDSub = document.getElementById('statDevicesSub');
+      if (elDSub) elDSub.textContent = `${totalDevices} / ${capacity} kapasite · ${licensedUsers} lisanslı`;
+    }
+
+    function loadSystemStatus() {
+      apiCall('/admin/api/system/status').then(data => {
+        if (data.status !== 'ok') return;
+        systemStatusCache = data;
+        const signing = !!data.license_signing;
+        const badge = document.getElementById('licenseStatusBadge');
+        if (badge) {
+          badge.textContent = signing
+            ? ('Lisans imzalama: AKTİF · ' + (data.license_ttl_days || 30) + ' gün')
+            : 'Lisans imzalama: KAPALI (sunucu anahtarı yok)';
+          badge.style.background = signing ? 'rgba(5, 150, 105, 0.10)' : 'rgba(217, 119, 6, 0.12)';
+          badge.style.color = signing ? 'var(--pine-light)' : '#92400E';
+          badge.style.borderColor = signing ? 'var(--pine-border)' : 'var(--ochre-border)';
+          badge.title = signing
+            ? ('Anahtar: ' + (data.license_key_id || '-') + ' · Parmak izi: ' + (data.license_public_key_fingerprint || '-'))
+            : 'SERPENT_LICENSE_PRIVATE_KEY ortam değişkeni tanımlı değil. Cihaz bağlama çalışır; çevrimdışı lisans üretilmez.';
+        }
+        const signingBadge = document.getElementById('licenseSigningBadge');
+        if (signingBadge) {
+          signingBadge.textContent = signing
+            ? ('İmzalama aktif · anahtar ' + (data.license_key_id || '-'))
+            : 'İmzalama kapalı · sunucu özel anahtarı yok';
+          signingBadge.style.background = signing ? 'var(--pine-subtle)' : 'var(--ochre-subtle)';
+          signingBadge.style.color = signing ? 'var(--pine-light)' : '#92400E';
+          signingBadge.style.borderColor = signing ? 'var(--pine-border)' : 'var(--ochre-border)';
+        }
+        const deviceLimit = document.getElementById('policyDeviceLimit');
+        if (deviceLimit) deviceLimit.textContent = data.device_limit || 2;
+        const licenseDays = document.getElementById('policyLicenseDays');
+        if (licenseDays) licenseDays.textContent = data.license_ttl_days || 30;
+        const heartbeat = document.getElementById('policyHeartbeatHours');
+        if (heartbeat) heartbeat.textContent = data.heartbeat_hours || 6;
+        const sessionDays = document.getElementById('policySessionDays');
+        if (sessionDays) sessionDays.textContent = data.session_days || 90;
+        const requireBinding = document.getElementById('policyRequireBinding');
+        if (requireBinding) {
+          requireBinding.textContent = data.require_device_binding ? 'Açık' : 'Kapalı';
+          requireBinding.style.color = data.require_device_binding ? 'var(--pine-light)' : 'var(--ochre-light)';
+        }
+      }).catch(() => {
+        const badge = document.getElementById('licenseStatusBadge');
+        if (badge) badge.textContent = 'Lisans durumu alınamadı';
+      });
     }
 
     function loadUsers() {
@@ -2923,7 +3616,7 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
       const tbody = document.getElementById('usersTableBody');
       tbody.innerHTML = '';
       if (!list.length) {
-        tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; padding:24px; color:var(--text-muted);">Kayıtlı kullanıcı bulunamadı.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="9" style="text-align:center; padding:24px; color:var(--text-muted);">Kayıtlı kullanıcı bulunamadı.</td></tr>';
         return;
       }
       list.forEach(u => {
@@ -2967,6 +3660,41 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
         }
         verCell.appendChild(verBadge);
 
+        const deviceCell = textCell(tr, '');
+        deviceCell.style.whiteSpace = 'nowrap';
+        const deviceBadge = document.createElement('span');
+        const deviceCount = parseInt(u.device_count, 10) || 0;
+        const deviceLimit = parseInt(u.device_limit, 10) || 2;
+        deviceBadge.textContent = `${deviceCount}/${deviceLimit} cihaz`;
+        deviceBadge.style.cssText = 'display:inline-block;padding:2px 8px;border-radius:99px;font-size:11px;font-weight:600;margin-right:5px;';
+        if (deviceCount >= deviceLimit) {
+          deviceBadge.style.background = 'rgba(217, 119, 6, 0.12)';
+          deviceBadge.style.color = '#B45309';
+          deviceBadge.style.border = '1px solid rgba(217, 119, 6, 0.34)';
+        } else {
+          deviceBadge.style.background = 'rgba(5, 150, 105, 0.10)';
+          deviceBadge.style.color = 'var(--pine-light)';
+          deviceBadge.style.border = '1px solid var(--pine-border)';
+        }
+        deviceCell.appendChild(deviceBadge);
+        const licSpan = document.createElement('span');
+        licSpan.style.cssText = 'display:inline-block;font-size:11px;font-weight:600;';
+        if (u.license_active) {
+          const days = u.license_expires_at ? Math.max(0, Math.ceil((u.license_expires_at - Date.now() / 1000) / 86400)) : 0;
+          licSpan.textContent = `Lisans: ${days} gün`;
+          licSpan.style.color = 'var(--pine-light)';
+        } else if (u.license_expires_at) {
+          licSpan.textContent = 'Lisans: süresi doldu';
+          licSpan.style.color = 'var(--terracotta)';
+        } else {
+          licSpan.textContent = 'Lisans: yok';
+          licSpan.style.color = 'var(--text-muted)';
+        }
+        licSpan.title = 'Lisans, cihaz ve hesap başına 30 günlük otomatik yenilenen imzalı yetkidir.';
+        deviceCell.appendChild(licSpan);
+        deviceCell.appendChild(document.createElement('br'));
+        actionButton(deviceCell, 'Cihazları Yönet', () => openDevicesModal(u.username), 'btn-secondary');
+
         const permissions = textCell(tr, rPanels.length ? rPanels.length + ' Panel Kısıtlı' : 'Tüm Paneller Açık');
         permissions.title = rPanels.join(', ');
         permissions.style.color = rPanels.length ? 'var(--ochre-light)' : 'var(--text-muted)';
@@ -2986,15 +3714,19 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
       const password = document.getElementById('newPassword').value;
       const display_name = document.getElementById('newDisplayName').value.trim();
       const role = document.getElementById('newRole').value.trim() || 'tester';
+      const expiryEl = document.getElementById('newExpiryDays');
+      const expires_in_days = expiryEl ? expiryEl.value.trim() : '';
       if (!username || !password) return showToast("Kullanıcı adı ve şifre zorunludur!", "error");
+      if (password.length < 12) return showToast("İlk şifre en az 12 karakter olmalıdır.", "error");
 
-      apiCall('/admin/api/users/create', 'POST', { username, password, display_name, role }).then(res => {
+      apiCall('/admin/api/users/create', 'POST', { username, password, display_name, role, expires_in_days }).then(res => {
         if (res.status === 'ok') {
           showToast("Kullanıcı oluşturuldu! Tester hemen giriş yapabilir.", "success");
           document.getElementById('newUsername').value = '';
           document.getElementById('newPassword').value = '';
           document.getElementById('newDisplayName').value = '';
           document.getElementById('newRole').value = 'tester';
+          if (expiryEl) expiryEl.value = '';
           loadUsers();
         } else {
           showToast("Hata: " + res.message, "error");
@@ -3496,6 +4228,7 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
     }
 
     function loadAll() {
+      loadSystemStatus();
       loadUsers();
       loadErrors();
       loadScripts();
@@ -3588,10 +4321,13 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
           u.username || '', u.display_name || '', u.role || '',
           u.is_active ? 'aktif' : 'askida',
           u.client_version || '',
+          (u.device_count || 0) + '/' + (u.device_limit || 2),
+          u.license_expires_at ? new Date(u.license_expires_at * 1000).toISOString() : '',
+          u.license_status || '',
           Array.isArray(u.restricted_panels) ? u.restricted_panels.join('|') : '',
           u.last_seen ? new Date(u.last_seen * 1000).toISOString() : ''
         ]);
-        downloadFile('serpent-kullanicilar.csv', csvRows(['username','display_name','role','durum','son_surum','panel_kisitlari','son_gorulme'], rows), 'text/csv;charset=utf-8');
+        downloadFile('serpent-kullanicilar.csv', csvRows(['username','display_name','role','durum','son_surum','cihazlar','lisans_bitis','lisans_durumu','panel_kisitlari','son_gorulme'], rows), 'text/csv;charset=utf-8');
       }
       showToast('Kullanıcı listesi indirildi (' + (format === 'json' ? 'JSON' : 'CSV') + ').', 'success');
     }
@@ -3789,11 +4525,113 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
         expires_in_hours: expiry
       }).then(res => {
         if (res.status === 'ok') {
-          showToast('Duyuru yayınlandı! Kullanıcılara en geç 60 sn içinde gösterilecek.', 'success');
+          showToast('Duyuru yayınlandı. Kullanıcılar bir sonraki nabızda veya uygulamayı açtığında görecek.', 'success');
           msgEl.value = '';
           loadAnnouncements();
         } else {
           showToast('Duyuru gönderilemedi: ' + (res.message || 'Bilinmeyen hata'), 'error');
+        }
+      }).catch(err => showToast('İstek başarısız: ' + (err.message || 'Bağlantı hatası'), 'error'));
+    }
+
+    function formatDeviceTime(value) {
+      return value ? new Date(value * 1000).toLocaleString('tr-TR') : '-';
+    }
+
+    function shortFingerprint(value) {
+      const fp = String(value || '');
+      return fp ? (fp.substring(0, 10) + '…' + fp.substring(fp.length - 6)) : '-';
+    }
+
+    function fillDeviceTable(tbody, devices, username) {
+      while (tbody.firstChild) tbody.removeChild(tbody.firstChild);
+      if (!devices.length) {
+        fillDetailEmptyRow(tbody, 7, 'Bu kullanıcıya bağlı cihaz yok. İlk girişte otomatik olarak eklenir.');
+        return;
+      }
+      devices.forEach(d => {
+        const tr = document.createElement('tr');
+        const labelCell = textCell(tr, d.label || 'Bilinmeyen cihaz');
+        labelCell.title = d.last_ip ? ('Son IP: ' + d.last_ip) : '';
+        const fpCell = textCell(tr, shortFingerprint(d.fingerprint));
+        fpCell.title = d.fingerprint || '';
+        fpCell.style.fontFamily = 'monospace';
+        fpCell.style.fontSize = '11px';
+        textCell(tr, d.platform || '-');
+        textCell(tr, formatDeviceTime(d.first_seen));
+        textCell(tr, formatDeviceTime(d.last_seen));
+        const state = textCell(tr, d.is_revoked ? 'Kaldırıldı' : 'Bağlı');
+        state.style.color = d.is_revoked ? 'var(--text-muted)' : 'var(--pine-light)';
+        state.style.fontWeight = '600';
+        const actions = textCell(tr, '');
+        if (!d.is_revoked) {
+          actionButton(actions, 'Sıfırla', () => resetUserDevices(d.id, false), 'btn-danger');
+        } else {
+          actions.textContent = '—';
+          actions.style.color = 'var(--text-muted)';
+        }
+        tbody.appendChild(tr);
+      });
+    }
+
+    function loadDevicesForUser(username) {
+      if (!username) return;
+      apiCall('/admin/api/users/devices?username=' + encodeURIComponent(username)).then(data => {
+        if (data.status !== 'ok') {
+          showToast('Cihaz listesi alınamadı.', 'error');
+          return;
+        }
+        currentDevicesUser = username;
+        currentDevicesCache = data.devices || [];
+        const modalBody = document.getElementById('devicesTableBody');
+        if (modalBody) fillDeviceTable(modalBody, currentDevicesCache, username);
+        const label = document.getElementById('devicesModalUsername');
+        if (label) label.textContent = username;
+        const capacity = document.getElementById('devicesModalCapacity');
+        if (capacity) {
+          capacity.textContent = `(${data.device_count || 0}/${data.device_limit || 2} cihaz)`;
+          capacity.style.color = (data.device_count || 0) >= (data.device_limit || 2) ? 'var(--ochre-light)' : 'var(--pine-light)';
+          capacity.style.fontWeight = '600';
+        }
+        if (currentUserDetail && currentUserDetail.username === username) {
+          currentUserDetail.devices = currentDevicesCache;
+          renderUserDetailDevices(currentUserDetail);
+        }
+      }).catch(err => showToast('Cihaz isteği başarısız: ' + (err.message || 'Bağlantı hatası'), 'error'));
+    }
+
+    function openDevicesModal(username) {
+      currentDevicesUser = username;
+      const modal = document.getElementById('devicesModal');
+      if (modal) modal.style.display = 'flex';
+      const label = document.getElementById('devicesModalUsername');
+      if (label) label.textContent = username;
+      loadDevicesForUser(username);
+    }
+
+    function closeDevicesModal() {
+      const modal = document.getElementById('devicesModal');
+      if (modal) modal.style.display = 'none';
+    }
+
+    function resetUserDevices(deviceId, all) {
+      const username = currentDevicesUser || userDetailUsername;
+      if (!username) {
+        showToast('Önce bir kullanıcı seçin.', 'error');
+        return;
+      }
+      const scope = all ? 'TÜM cihazları ve oturumları' : 'seçili cihazı ve oturumlarını';
+      if (!confirm(username + ' için ' + scope + ' sıfırlamak istediğinize emin misiniz?')) return;
+      const payload = {username: username};
+      if (!all) payload.device_id = deviceId;
+      apiCall('/admin/api/users/reset-device', 'POST', payload).then(res => {
+        if (res.status === 'ok') {
+          showToast(res.message || 'Cihaz sıfırlandı.', 'success');
+          loadUsers();
+          if (currentDevicesUser) loadDevicesForUser(currentDevicesUser);
+          if (currentUserDetail && currentUserDetail.username === username) openUserDetail(username);
+        } else {
+          showToast(res.message || 'Cihaz sıfırlanamadı.', 'error');
         }
       }).catch(err => showToast('İstek başarısız: ' + (err.message || 'Bağlantı hatası'), 'error'));
     }
@@ -3839,7 +4677,23 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
       tbody.appendChild(tr);
     }
 
+    function renderUserDetailDevices(detail) {
+      const body = document.getElementById('userDetailDevices');
+      if (!body) return;
+      const devices = detail.devices || [];
+      fillDeviceTable(body, devices, detail.username);
+      const countLabel = document.getElementById('userDetailDeviceCount');
+      if (countLabel) {
+        const limit = detail.device_limit || 2;
+        countLabel.textContent = `(${detail.device_count || 0}/${limit})`;
+        countLabel.style.color = (detail.device_count || 0) >= limit ? 'var(--ochre-light)' : 'var(--text-muted)';
+      }
+    }
+
     function renderUserDetail(detail) {
+      currentUserDetail = detail;
+      userDetailUsername = detail.username || '';
+      currentDevicesUser = userDetailUsername;
       document.getElementById('userDetailTitle').textContent = 'Kullanıcı Detayı: ' + (detail.username || '');
       const summary = document.getElementById('userDetailSummary');
       while (summary.firstChild) summary.removeChild(summary.firstChild);
@@ -3848,14 +4702,28 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
       summary.appendChild(detailChip('İsim', detail.display_name || '-'));
       summary.appendChild(detailChip('Son Sürüm', detail.client_version || 'Bilinmiyor'));
       summary.appendChild(detailChip('Son Görülme', detail.last_seen ? new Date(detail.last_seen * 1000).toLocaleString('tr-TR') : 'Hiç giriş yapmadı'));
+      summary.appendChild(detailChip('Cihazlar', (detail.device_count || 0) + '/' + (detail.device_limit || 2), (detail.device_count || 0) >= (detail.device_limit || 2) ? 'var(--ochre-light)' : 'var(--pine-light)'));
+      let licenseText = 'Yok';
+      let licenseColor = 'var(--text-muted)';
+      if (detail.license_expires_at) {
+        const days = Math.max(0, Math.ceil((detail.license_expires_at - Date.now() / 1000) / 86400));
+        licenseText = days > 0 ? (days + ' gün geçerli') : 'Süresi doldu';
+        licenseColor = days > 0 ? 'var(--pine-light)' : 'var(--terracotta)';
+      } else if (detail.license_active) {
+        licenseText = 'Aktif';
+        licenseColor = 'var(--pine-light)';
+      }
+      summary.appendChild(detailChip('Lisans', licenseText, licenseColor));
+      summary.appendChild(detailChip('Hesap Bitişi', detail.expires_at ? new Date(detail.expires_at * 1000).toLocaleDateString('tr-TR') : 'Süresiz'));
       const rp = Array.isArray(detail.restricted_panels) ? detail.restricted_panels : [];
       summary.appendChild(detailChip('Kısıtlar', rp.length ? rp.join(', ') : 'Yok', rp.length ? 'var(--ochre-light)' : 'var(--pine-light)'));
+      renderUserDetailDevices(detail);
 
       const sessions = detail.sessions || [];
       const sessBody = document.getElementById('userDetailSessions');
       while (sessBody.firstChild) sessBody.removeChild(sessBody.firstChild);
       if (!sessions.length) {
-        fillDetailEmptyRow(sessBody, 5, 'Kayıtlı oturum yok.');
+        fillDetailEmptyRow(sessBody, 6, 'Kayıtlı oturum yok.');
       } else {
         sessions.forEach(s => {
           const tr = document.createElement('tr');
@@ -3863,6 +4731,7 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
           textCell(tr, s.last_heartbeat ? new Date(s.last_heartbeat * 1000).toLocaleString('tr-TR') : '-');
           textCell(tr, s.client_version || '-');
           textCell(tr, s.platform || '-');
+          textCell(tr, s.license_expires_at ? new Date(s.license_expires_at * 1000).toLocaleString('tr-TR') : '-');
           const stCell = textCell(tr, s.is_revoked ? 'Kapatıldı' : 'Aktif');
           stCell.style.color = s.is_revoked ? 'var(--text-muted)' : 'var(--pine-light)';
           stCell.style.fontWeight = '600';
