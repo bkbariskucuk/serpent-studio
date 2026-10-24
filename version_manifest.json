@@ -4,9 +4,9 @@
   "mandatory": false,
   "release_date": "2026-10-24",
   "release_title": "Serpent Studio v1.2.72.79",
-  "release_notes": "Serpent Studio v1.2.72.79 - Analysis Outputs Excel/CSV Export and Thermal Hydraulic Heat Tally",
-  "sha256": "49691920106b0a0fe822902bbd96a9ea19c0bfec4fb9a254ad33efb6cab85d24",
-  "file_size_bytes": 141359608,
+  "release_notes": "Serpent Studio v1.2.72.79 - Assembly Canvas instant pin assignment and Analysis Outputs CSV export",
+  "sha256": "bb11e7d96384d9325e4c78c82bce14e7f82689e3b3db21283e58d1cb4677cb89",
+  "file_size_bytes": 141367800,
   "download_url": "https://github.com/bkbariskucuk/serpent-studio/releases/download/v1.2.72.79/Serpent.Studio.AppImage",
   "zsync_url": "https://github.com/bkbariskucuk/serpent-studio/releases/download/v1.2.72.79/Serpent.Studio.AppImage.zsync"
 }
