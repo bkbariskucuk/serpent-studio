@@ -11,6 +11,11 @@ Linux x86_64 (Ubuntu 20.04 / Debian 11 ve üzeri). FUSE bulunmayan sistemlerde `
 
 ## v1.2.72.79 ile Gelen Yenilikler ve Düzeltmeler
 
+* **Assembly Canvas Anlık Konsantrik Pin Render ve Performans (`ui/main_window.py`):**
+  * Pop-out ve ana Assembly Canvas üzerinde pin boyama yapılırken (kare ve altıgen örgüler) hücrenin tek parça pin rengine boyanıp donması ve pin şeklinin gecikmeli gelmesi sorunu giderildi.
+  * Tıklanan hücrede tüm kareyi düz renkle doldurmak yerine soğutucu zemin ve seçili pinin iç içe konsantrik katmanları (`add_concentric_pin_layers`) sıfır gecikmeyle doğrudan yerinde çizilir.
+  * Mouse sürükleme ve tıklama olaylarında aynı hücrenin mükerrer kez baştan çizilmesini önlemek amacıyla koordinat bazlı takip getirilerek render akıcılığı maksimize edildi.
+
 * **Analysis Outputs Excel & CSV Dışa Aktarımı (`core/analysis_csv_exporter.py`, `ui/analysis_outputs.py`):**
   * Dinamik Yatay Eksen Duyarlılığı: keff, beta_eff, CR, eksenel akı/güç ve tükenme çıktılarında seçilen eksene göre birinci sütun ve koordinat sistemi dinamik olarak değişir.
   * İstatistiksel Sapma Raporlama: Nominal değer, 1-sigma mutlak hata (`Absolute_Uncertainty_1sigma`), Monte Carlo bağıl hatası (`Relative_Error`) ve keff için `Uncertainty_pcm` ayrı sütunlarda sunulur.
