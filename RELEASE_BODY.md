@@ -1,6 +1,6 @@
-# Serpent Studio v1.2.72.79 (Alpha)
+# Serpent Studio v1.2.72.80 (Alpha)
 
-[Serpent.Studio.AppImage indir](https://github.com/bkbariskucuk/serpent-studio/releases/download/v1.2.72.79/Serpent.Studio.AppImage)
+[Serpent.Studio.AppImage indir](https://github.com/bkbariskucuk/serpent-studio/releases/download/v1.2.72.80/Serpent.Studio.AppImage)
 
 ```bash
 chmod +x Serpent.Studio.AppImage
@@ -9,23 +9,27 @@ chmod +x Serpent.Studio.AppImage
 
 Linux x86_64 (Ubuntu 20.04 / Debian 11 ve üzeri). FUSE bulunmayan sistemlerde `--appimage-extract-and-run` parametresiyle çalıştırılabilir. Python veya ek bağımlılık kurulumu gerektirmez.
 
-## v1.2.72.79 ile Gelen Yenilikler ve Düzeltmeler
+## v1.2.72.80 ile Gelen Yenilikler ve Düzeltmeler
 
-* **Assembly Canvas Anlık Konsantrik Pin Render ve Performans (`ui/main_window.py`):**
-  * Pop-out ve ana Assembly Canvas üzerinde pin boyama yapılırken (kare ve altıgen örgüler) hücrenin tek parça pin rengine boyanıp donması ve pin şeklinin gecikmeli gelmesi sorunu giderildi.
-  * Tıklanan hücrede tüm kareyi düz renkle doldurmak yerine soğutucu zemin ve seçili pinin iç içe konsantrik katmanları (`add_concentric_pin_layers`) sıfır gecikmeyle doğrudan yerinde çizilir.
-  * Mouse sürükleme ve tıklama olaylarında aynı hücrenin mükerrer kez baştan çizilmesini önlemek amacıyla koordinat bazlı takip getirilerek render akıcılığı maksimize edildi.
+* **Dosya Seçim Penceresi Vektörel Araç Çubuğu ve İkon Teması Senkronizasyonu (`ui/theme.py`, `ui/import_file_dialog.py`):**
+  * Koyu sistem temalarında (KDE Breeze-Dark vb.) açık modda beyaz butonlar üzerinde oluşan "hayalet ikon" kontrast sorunu giderildi.
+  * `sync_system_icon_theme` ile Qt sistem ikon teması uygulamanın anlık açık/koyu mod durumuna göre otomatik senkronize edilir; Look in klasör ikonu, dosya listeleri ve Hızlı Konumlar açık modda koyu/renkli, koyu modda açık gliflere uyarlandı.
+  * Üst araç çubuğu butonları (`backButton`, `forwardButton`, `toParentButton`, `newFolderButton`, `listModeButton`, `detailModeButton`) kristal netliğinde saf vektörel SVG ikonlara bağlandı; normal, disabled ve aktif durumlar için bağımsız HiDPI ölçekleri oluşturuldu.
+  * 24×24 px ergonomik boyut, 6 px köşe radyusu ve durum bazlı stil harmonizasyonu sağlandı.
 
-* **Analysis Outputs Excel & CSV Dışa Aktarımı (`core/analysis_csv_exporter.py`, `ui/analysis_outputs.py`):**
-  * Dinamik Yatay Eksen Duyarlılığı: keff, beta_eff, CR, eksenel akı/güç ve tükenme çıktılarında seçilen eksene göre birinci sütun ve koordinat sistemi dinamik olarak değişir.
-  * İstatistiksel Sapma Raporlama: Nominal değer, 1-sigma mutlak hata (`Absolute_Uncertainty_1sigma`), Monte Carlo bağıl hatası (`Relative_Error`) ve keff için `Uncertainty_pcm` ayrı sütunlarda sunulur.
-  * Türkçe ve Avrupa Excel Ondalık Ayracı Düzeltmesi: tr_TR yerel ayarında noktalı sayıların (örneğin 20.886 -> 20886) binlik ayracı sanılarak bozulması giderildi; bölgesel noktalı virgül (;) ve ondalık virgül (,) standardı sağlandı.
-  * Sütun Tekrarlama (Duplicate Column) Düzeltmesi: `Cumulative Time (days)` ile `Burn_Days_d` sütunlarının aynı anda bulunması engellendi; seçilen eksen daima birinci sütun olup diğer koordinatlar tekrarsız listelenir.
-  * Termal Hidrolik Rod-Power Isı Çıktıları: "Thermal Hydraulic Code for Fuel Heat Removal" iş akışına tam uyumlu olarak radyal PPF ve det ısı çıktılarında yakıt çubuğu bazlı `Konum_X_cm`, `Konum_Y_cm`, `Konum_Z_cm`, `Fisyon_Gucu_W`, `Bagil_Hata`, `Mutlak_Hata_W`, `PPF_Fxy` kolonları eksiksiz üretilir.
+* **Genişletilmiş Ergonomik Dosya Seçim Penceresi (`StudioFileDialog` - `ui/import_file_dialog.py`):**
+  * 960×600 px geniş standart pencere boyutu ve 210 px sabit asgari sol kenar çubuğu genişliği ile isim kesilmeleri ("Masaüstü" -> "Ma...") engellendi.
+  * Sol panele saf SVG vektör ikonlu hızlı erişim butonları yerleştirildi: 🖥️ Masaüstü / Desktop, 📁 Çalışma Alanı / Workspace, 🏠 Ev Dizini / Home ve ⚛️ Nükleer Veri / Nuclear Data.
 
-* **Arayüz ve Buton Düzeni (`ui/analysis_outputs.py`, `ui/theme.py`, `core/i18n.py`):**
-  * "Export CSV" butonu hem ana sayfada hem ayrık pencerede "Pop-out" ile "Export PNG" arasına yerleştirildi.
-  * Vektörel "csv" SVG ikonu, TR ve EN çeviriler ve Komut Paleti kaydı tamamlandı.
+* **Windows Sürücü Arama Sihirbazı Formatında Kütüphane Konumlandırma ve Doğrulama (`ui/library_locator_dialog.py`, `core/discovery.py`):**
+  * Sezgisel "Kütüphaneleri Otomatik Olarak Ara" ve "Bilgisayarıma Gözat" modülleri eklendi.
+  * Doğrudan yol düzenleme metin kutuları (`QLineEdit`), `[Gözat...]` ve anlık `[Doğrula]` butonları entegre edildi.
+  * Zengin doğrulama penceresi (`LibraryValidationDialog`) ile izotop sayısı, dosya boyutu, nükleer sürüm ve ZAID sözdizimi derinlemesine doğrulanıp rozetlerle sunulur.
+
+* **Operation Ayarları ve Backend Tanı Ekranında Tam İki Dilli (TR/EN) Yerelleştirme ve SVG İkon Standardizasyonu (`core/i18n.py`, `ui/theme.py`, `ui/backend_diagnostics_dialog.py`):**
+  * Tofu (`▯`) kutucuk oluşturan unicode emojiler temizlendi; saf vektörel SVG ikonlar standartlaştırıldı.
+  * Backend tanı penceresinde kütüphaneler için disk üzerindeki tam yolları gösteren bağımsız kartlar geliştirildi.
+  * Operation sekmesi ve tanı ekranı %100 eksiksiz Türkçe ve İngilizce dil desteğine kavuşturuldu.
 
 ## İndirme ve Doğrulama
 
