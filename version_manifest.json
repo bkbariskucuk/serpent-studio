@@ -1,12 +1,12 @@
 {
-  "latest_version": "v1.2.72.79",
+  "latest_version": "v1.2.72.80",
   "min_supported_version": "v0.2.50.00",
   "mandatory": false,
-  "release_date": "2026-10-24",
-  "release_title": "Serpent Studio v1.2.72.79",
-  "release_notes": "Serpent Studio v1.2.72.79 - Assembly Canvas instant pin assignment and Analysis Outputs CSV export",
-  "sha256": "bb11e7d96384d9325e4c78c82bce14e7f82689e3b3db21283e58d1cb4677cb89",
-  "file_size_bytes": 141367800,
-  "download_url": "https://github.com/bkbariskucuk/serpent-studio/releases/download/v1.2.72.79/Serpent.Studio.AppImage",
-  "zsync_url": "https://github.com/bkbariskucuk/serpent-studio/releases/download/v1.2.72.79/Serpent.Studio.AppImage.zsync"
+  "release_date": "2026-10-25",
+  "release_title": "Serpent Studio v1.2.72.80",
+  "release_notes": "Serpent Studio v1.2.72.80 Release",
+  "sha256": "6201026dbba42f5d83493f5b3b9f1a9ce117d0b4d8aad81f5d55fd205561c573",
+  "file_size_bytes": 141531640,
+  "download_url": "https://github.com/bkbariskucuk/serpent-studio/releases/download/v1.2.72.80/Serpent.Studio.AppImage",
+  "zsync_url": "https://github.com/bkbariskucuk/serpent-studio/releases/download/v1.2.72.80/Serpent.Studio.AppImage.zsync"
 }
