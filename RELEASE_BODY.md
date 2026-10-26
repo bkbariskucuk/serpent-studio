@@ -1,6 +1,6 @@
-# Serpent Studio v1.2.72.80 (Alpha)
+# Serpent Studio v1.2.72.81 (Alpha)
 
-[Serpent.Studio.AppImage indir](https://github.com/bkbariskucuk/serpent-studio/releases/download/v1.2.72.80/Serpent.Studio.AppImage)
+[Serpent.Studio.AppImage indir](https://github.com/bkbariskucuk/serpent-studio/releases/download/v1.2.72.81/Serpent.Studio.AppImage)
 
 ```bash
 chmod +x Serpent.Studio.AppImage
@@ -9,27 +9,30 @@ chmod +x Serpent.Studio.AppImage
 
 Linux x86_64 (Ubuntu 20.04 / Debian 11 ve üzeri). FUSE bulunmayan sistemlerde `--appimage-extract-and-run` parametresiyle çalıştırılabilir. Python veya ek bağımlılık kurulumu gerektirmez.
 
-## v1.2.72.80 ile Gelen Yenilikler ve Düzeltmeler
+## v1.2.72.81 ile Gelen Yenilikler ve Düzeltmeler
 
-* **Dosya Seçim Penceresi Vektörel Araç Çubuğu ve İkon Teması Senkronizasyonu (`ui/theme.py`, `ui/import_file_dialog.py`):**
-  * Koyu sistem temalarında (KDE Breeze-Dark vb.) açık modda beyaz butonlar üzerinde oluşan "hayalet ikon" kontrast sorunu giderildi.
-  * `sync_system_icon_theme` ile Qt sistem ikon teması uygulamanın anlık açık/koyu mod durumuna göre otomatik senkronize edilir; Look in klasör ikonu, dosya listeleri ve Hızlı Konumlar açık modda koyu/renkli, koyu modda açık gliflere uyarlandı.
-  * Üst araç çubuğu butonları (`backButton`, `forwardButton`, `toParentButton`, `newFolderButton`, `listModeButton`, `detailModeButton`) kristal netliğinde saf vektörel SVG ikonlara bağlandı; normal, disabled ve aktif durumlar için bağımsız HiDPI ölçekleri oluşturuldu.
-  * 24×24 px ergonomik boyut, 6 px köşe radyusu ve durum bazlı stil harmonizasyonu sağlandı.
+* **Çekirdek Matrisi ve Latisinde Dinamik Su / Soğutucu Pini Algoritması (`ui/main_window.py`):**
+  * Sabit/ezbere pin numaraları (0, 4, 99) arama davranışı tamamen kaldırıldı.
+  * İki aşamalı dinamik tespit: Malzeme tanımlarından (`mat ...`) soğutucu malzeme tespit edilir; ana çekirdek latisi (`lat 999` / `core_matrix`) taranarak yakıt demetleri (`custom_assemblies`) dışında kullanılan gerçek soğutucu pini izole edilir.
+  * `smart_validasyon` dosyasında demet içi kılavuz tüpleri (`4`) ve zehir çubukları (`7`) elenerek yalnızca ana latis soğutucusu (`99`) çekirdek paletine eklenir.
+  * Tuval boyama, su hücresi atama ve dış halka su temizleme butonları tespit edilen dinamik soğutucu piniyle senkronize çalışır.
 
-* **Genişletilmiş Ergonomik Dosya Seçim Penceresi (`StudioFileDialog` - `ui/import_file_dialog.py`):**
-  * 960×600 px geniş standart pencere boyutu ve 210 px sabit asgari sol kenar çubuğu genişliği ile isim kesilmeleri ("Masaüstü" -> "Ma...") engellendi.
-  * Sol panele saf SVG vektör ikonlu hızlı erişim butonları yerleştirildi: 🖥️ Masaüstü / Desktop, 📁 Çalışma Alanı / Workspace, 🏠 Ev Dizini / Home ve ⚛️ Nükleer Veri / Nuclear Data.
+* **Alt Paneller Çoklu Pop-out (Both Popout) Araç Çubuğu Senkronizasyonu (`ui/main_window.py`, `ui/workflow_dialogs.py`):**
+  * Konsol ve Preflight panelleri birlikte ayrıldığında (`DetachedBottomNotebookWindow`) konsol araç çubuğunun (Clear, Copy, Find, Settings, filtre çipleri) kaybolması kusuru giderildi.
+  * Ayrılmış çoklu sekme penceresinde Console sekmesinde köşe bileşeni olarak `cmd_toolbar`, Preflight Results aktifken `btn_dock_back` dinamik olarak atanır.
+  * Konsol başlığı ile log metni arasındaki 39 px'lik görünmez dikey boşluk sıfırlandı; alt panel daraltıldığında dahi log yazılarının ezilmesi önlendi.
 
-* **Windows Sürücü Arama Sihirbazı Formatında Kütüphane Konumlandırma ve Doğrulama (`ui/library_locator_dialog.py`, `core/discovery.py`):**
-  * Sezgisel "Kütüphaneleri Otomatik Olarak Ara" ve "Bilgisayarıma Gözat" modülleri eklendi.
-  * Doğrudan yol düzenleme metin kutuları (`QLineEdit`), `[Gözat...]` ve anlık `[Doğrula]` butonları entegre edildi.
-  * Zengin doğrulama penceresi (`LibraryValidationDialog`) ile izotop sayısı, dosya boyutu, nükleer sürüm ve ZAID sözdizimi derinlemesine doğrulanıp rozetlerle sunulur.
+* **Çekirdek Yükseklik ve Adım Kararlılığı (`core/input_parser.py`, `ui/main_window.py`):**
+  * Kontrol çubuğu kaydırıcısı oynatıldığında veya Ctrl+S yapıldığında kontrol çubuğu uç düzlemlerinin (`pz`) çekirdek eksenel boyutunu şişirmesi ve kullanıcının girdiği `core_height_spin` değerini ezmesi engellendi.
+  * `_user_set_core_pitch` bayrağı ile kullanıcının manuel girdiği `pitch_spin` adımı koruma altına alındı.
 
-* **Operation Ayarları ve Backend Tanı Ekranında Tam İki Dilli (TR/EN) Yerelleştirme ve SVG İkon Standardizasyonu (`core/i18n.py`, `ui/theme.py`, `ui/backend_diagnostics_dialog.py`):**
-  * Tofu (`▯`) kutucuk oluşturan unicode emojiler temizlendi; saf vektörel SVG ikonlar standartlaştırıldı.
-  * Backend tanı penceresinde kütüphaneler için disk üzerindeki tam yolları gösteren bağımsız kartlar geliştirildi.
-  * Operation sekmesi ve tanı ekranı %100 eksiksiz Türkçe ve İngilizce dil desteğine kavuşturuldu.
+* **Preflight Paneli Dikey Alan Tasarrufu ve Kategori Filtreleme (`ui/preflight_panel.py`):**
+  * Özet rozetleri ve "Preflight" başlığı tek satıra indirgendi; başlık yerine tıklanabilir checkable filtre çipleri (`Error`, `Warning`, `Info`, `Passed`) yerleştirildi. Ağaç görünümüne dikeyde geniş alan kazandırıldı.
+
+* **Kontrol Çubuğu Dinamik Malzemeleri ve Reflektör Senkronizasyonu (`ui/control_rods.py`, `ui/main_window.py`):**
+  * Kontrol Çubuğu sekmesindeki soğurucu malzeme listesi projedeki malzeme tablosundan (`mat_table`) dinamik olarak beslendi.
+  * Core Editor reflektör seçimi malzeme tablosuyla iki yönlü bağlandı; reflektör seçildiğinde malzeme listesine otomatik eklenir, değiştirildiğinde eskisi güncellenir.
+  * Altıgen sınır açısı (Hex Angle) kilidi açılarak 0° (`hexxc`) ve 30° (`hexyc`) yönelimleri çift yönlü senkronize edildi.
 
 ## İndirme ve Doğrulama
 
