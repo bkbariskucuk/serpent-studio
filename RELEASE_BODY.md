@@ -1,6 +1,6 @@
-# Serpent Studio v1.2.72.85 (Alpha)
+# Serpent Studio v1.2.72.86 (Alpha)
 
-[Serpent.Studio.AppImage indir](https://github.com/bkbariskucuk/serpent-studio/releases/download/v1.2.72.85/Serpent.Studio.AppImage)
+[Serpent.Studio.AppImage indir](https://github.com/bkbariskucuk/serpent-studio/releases/download/v1.2.72.86/Serpent.Studio.AppImage)
 
 ```bash
 chmod +x Serpent.Studio.AppImage
@@ -8,6 +8,15 @@ chmod +x Serpent.Studio.AppImage
 ```
 
 Linux x86_64 (Ubuntu 20.04 / Debian 11 ve üzeri). FUSE bulunmayan sistemlerde `--appimage-extract-and-run` parametresiyle çalıştırılabilir. Python veya ek bağımlılık kurulumu gerektirmez.
+
+## v1.2.72.86 ile Gelen Yenilikler ve Düzeltmeler
+
+* **Yeni Dal Açıldığında Anında Görsel Çatallanma Bağlantısı (Visual Fork Sprout) ve Dinamik Dal Ucu Düğümü:**
+  * "Master dalı üstünden yeni dal eklendiğinde herhangi bir bağlantı görsel olarak gösterilmiyor, ana dal üstünde kalıyor sabit" geri bildirimi çözüldü (`ui/design_tree_graph.py`, `ui/design_tree_dialog.py`).
+  * Git mantığında yeni açılan bir dal ilk commit atılana kadar ana commit ile aynı hash'i paylaşır. Bu durumda dalın boş bir kulvarda görünmez kalmasını engellemek için anında dinamik Dal Ucu Düğümü (Branch Head Node) sentezlenir.
+  * Ana daldaki çatallanma düğümünden (örneğin Node 14) yeni açılan dalın kulvarına (Ray 1) doğru zarif bir kübik Bezier çatallanma eğrisi (`Fork #hash`) anında bağlanır.
+  * Dal ucunda dalın renginde aktif ışıltılı düğüm (`asx (HEAD)`) konumlanır; dalda ilk aşama (commit) kaydedildiğinde gerçek commit bu noktayı devralarak dümdüz devam eder.
+  * Çatallanma dal ucu düğümüne tıklandığında veya çift tıklandığında detay paneli ve dal geçişi (checkout) sorunsuz çalışır.
 
 ## v1.2.72.85 ile Gelen Yenilikler ve Düzeltmeler
 
