@@ -1,6 +1,6 @@
-# Serpent Studio v1.2.72.83 (Alpha)
+# Serpent Studio v1.2.72.84 (Alpha)
 
-[Serpent.Studio.AppImage indir](https://github.com/bkbariskucuk/serpent-studio/releases/download/v1.2.72.83/Serpent.Studio.AppImage)
+[Serpent.Studio.AppImage indir](https://github.com/bkbariskucuk/serpent-studio/releases/download/v1.2.72.84/Serpent.Studio.AppImage)
 
 ```bash
 chmod +x Serpent.Studio.AppImage
@@ -8,6 +8,13 @@ chmod +x Serpent.Studio.AppImage
 ```
 
 Linux x86_64 (Ubuntu 20.04 / Debian 11 ve üzeri). FUSE bulunmayan sistemlerde `--appimage-extract-and-run` parametresiyle çalıştırılabilir. Python veya ek bağımlılık kurulumu gerektirmez.
+
+## v1.2.72.84 ile Gelen Yenilikler ve Düzeltmeler
+
+* **Tasarım Versiyon Ağacından Git Dahili refs/stash Referanslarının Filtrelenmesi:**
+  * Dallar arası geçiş esnasında çalışma alanı dosyalarını korumak amacıyla Git tarafından arka planda açılan geçici `refs/stash` ve `Auto-stash` kayıtları tasarım ağacı grafiğinden filtrelendi (`core/version_control.py`, `ui/design_tree_graph.py`).
+  * `git log` parametresi `--all` yerine `--branches --tags HEAD` standardına çekilerek sadece kullanıcının fiilen oluşturduğu gerçek tasarım dalları (`master`, `asx`, `18_cr_test` vb.) listelenir.
+  * Tasarım Ağacı görsel kulvarlarında dahili Git mekanizmaları yerine yalnızca saf model dalları görünür, görsel kalabalık ve kafa karışıklığı önlenir.
 
 ## v1.2.72.83 ile Gelen Yenilikler ve Düzeltmeler
 
