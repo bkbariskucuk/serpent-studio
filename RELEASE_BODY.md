@@ -1,6 +1,6 @@
-# Serpent Studio v1.2.72.82 (Alpha)
+# Serpent Studio v1.2.72.83 (Alpha)
 
-[Serpent.Studio.AppImage indir](https://github.com/bkbariskucuk/serpent-studio/releases/download/v1.2.72.82/Serpent.Studio.AppImage)
+[Serpent.Studio.AppImage indir](https://github.com/bkbariskucuk/serpent-studio/releases/download/v1.2.72.83/Serpent.Studio.AppImage)
 
 ```bash
 chmod +x Serpent.Studio.AppImage
@@ -9,32 +9,29 @@ chmod +x Serpent.Studio.AppImage
 
 Linux x86_64 (Ubuntu 20.04 / Debian 11 ve üzeri). FUSE bulunmayan sistemlerde `--appimage-extract-and-run` parametresiyle çalıştırılabilir. Python veya ek bağımlılık kurulumu gerektirmez.
 
-## v1.2.72.82 ile Gelen Yenilikler ve Düzeltmeler
+## v1.2.72.83 ile Gelen Yenilikler ve Düzeltmeler
 
-* **Git Tabanlı Tasarım Versiyon Ağacı (Design Version Tree & Branch Studio):**
-  * Sıfır ek bağımlılık: Sistemde `git` kuruluysa yerel CLI hızlandırması, kurulu değilse gömülü saf Python `EmbeddedDesignVCS` motoru kesintisiz çalışır.
-  * GitLab Network / EISquare GitFlow tarzı paralel yüzme kulvarları (swimlanes), yumuşak kübik bezier bağlantıları ve parlayan aktif HEAD düğümü.
-  * Tasarım Değişiklik Önizleme Kartı (Hover Preview HUD): Fare kontrol noktası üzerine geldiğinde commit mesajı, dal adı ve reaktör semantik nükleer farklarını (Malzeme, Pin, Lattice, Yüzey, Dedektör kartları) anlık gösterir.
-  * Dal Yönetimi: Dala çift tıklamayla anında geçiş (checkout), dal silme, dal yeniden adlandırma, dal birleştirme (merge) ve çakışma durumunda otomatik rollback koruması.
+* **Tasarım Versiyon Ağacı Geri Al ve Yinele Desteği (Ctrl+Z / Ctrl+Y / Ctrl+Shift+Z):**
+  * Çift motorlu (Sistem Git CLI ve Saf Python VCS) derin undo/redo mimarisi (`core/version_control.py`).
+  * Dal açma (`create_branch`), dal silme (`delete_branch`), dal yeniden adlandırma (`rename_branch`), dal değiştirme (`switch_branch`), aşama kaydetme (`commit_design`) ve dal birleştirme (`merge_branch`) işlemleri eksiksiz geri alınabilir ve yinelenebilir.
+  * Çalışma alanındaki model dosyaları korunarak yumuşak geri alma (`git reset --soft` / `reset_to_commit`) uygulanır; veri kaybı yaşanmaz.
+  * Klavyeden `Ctrl+Z` (Geri Al), `Ctrl+Y` / `Ctrl+Shift+Z` (Yinele) ve `F5` (Yenile) kısayolları doğrudan stüdyo penceresine bağlandı. Arama kutusu odaklıyken metin geri alma ile çakışması engellendi.
 
-* **Çalışma Alanı Ağacı (Workspace Tree) Klasör Bazlı Dal Butonu / Öğesi:**
-  * Eski snapshot klasörünün yerini alan, her çalışma alanı ve proje klasörünün en üstünde yer alan `[Tasarım Dalları / Design Branches]` öğesi geri getirildi.
-  * Çift tıklama ve Enter tuşu ile doğrudan ilgili klasörün Tasarım Ağacı penceresini açar; sağ tık menüsünden doğrudan dal yönetimine erişilir.
+* **Araç Çubuğu (Toolbar) Yerleşim ve Taşma Çözümü (`ui/design_tree_dialog.py`):**
+  * "Butonlar sığmamış yerlerine" geri bildirimi ve dar ekranlarda butonların üst üste binmesi sorunu kökten çözüldü.
+  * Geri Al (`btn_undo`), Yinele (`btn_redo`) ve Yenile (`btn_refresh`) butonları 28×28 piksel kompakt HiDPI vektörel SVG ikon butonlarına dönüştürüldü.
+  * Dinamik açıklayıcı ipucu (tooltip): Butonun üzerine gelindiğinde bir sonraki geri alınacak/yinelenecek somut işlem adı ve kısayolu (`Geri Al: '18_cr_test' dalını oluşturma (Ctrl+Z)`) dinamik olarak gösterilir.
+  * Minimum pencere boyutu 960×560 px olarak sabitlendi. Hem Türkçe hem İngilizce dil modlarında tüm buton ve girişlerin 0 px çakışmayla ferah oturması garanti edildi.
 
-* **Vektörel SVG İkon Seti ve Glif / Tofu Hatası Giderimi:**
-  * Karakter emojileri yerine HiDPI vektörel SVG ikon seti (`branch`, `branch_new`, `branch_edit`, `branch_delete`, `commit`, `merge`, `switch`, `diff`).
-  * Toolbar genişlik çakışması (1264px -> 871px) giderildi; buton metinleri ve dolguları kompaktlaştırılarak ferah bir yerleşim sağlandı.
-
-* **Ctrl+S ve Farklı Kaydet Dal Popout Bildirimi (Branch Save Toast):**
-  * Kaydetme yapıldığında ekranın sağ alt köşesinde beliren, aktif dal renginde vektörel dal simgesi, aktif dal adı (`[  master ]`), dosya adı ve Tasarım Ağacı kısayolu sunan modern toast bildirimi.
-  * Tek tıkla Tasarım Ağacı'nı açma, fare üzerine gelindiğinde otomatik kapanmayı duraklatma (hover pause), hızlı kapatma ve dinamik istifleme.
-  * §7 Erişilebilirlik (reduced_motion) standardına tam uyum: Animasyonları Durdur tercihi etkinken animasyonlar atlanır, anında açılıp kapanır.
-
-* **Eski Snapshot Kurgusunun Emekliye Ayrılması:**
-  * Diskte kopyalama yapan eski `snapshots/` klasörleri kaldırıldı; elektrik kesintisi ve çökme koruması sunan Auto-Recovery Draft mekanizması gizli `.recovery_draft.json` üzerinde izole edildi.
+* **Git Tabanlı Reaktör Tasarım Ağacı (Design Version Tree) & Dal Stüdyosu:**
+  * Sıfır harici bağımlılık: Sistemde Git kuruluysa yerel CLI hızlandırması, kurulu değilse gömülü saf Python motoru kesintisiz çalışır.
+  * EISquare GitFlow tarzı yüzme kulvarları (swimlanes), kübik bezier bağlantıları ve parlayan aktif HEAD düğümü.
+  * Hover Preview HUD: Fare kontrol noktası üzerine geldiğinde reaktör semantik nükleer farklarını (Malzeme, Pin, Lattice, Yüzey, Dedektör) anlık gösterir.
+  * Çalışma alanı klasör bazlı dal butonu (`[Tasarım Dalları / Design Branches]`) ve Ctrl+S dal rozetli popout bildirimi (`BranchSaveToast`).
 
 ## İndirme ve Doğrulama
 
-Yalnızca `Serpent.Studio.AppImage` dosyasını indirmeniz yeterlidir. `.zsync` dosyaları uygulama içi otomatik güncelleyici içindir.
-
-İndirdiğiniz dosyanın bütünlüğünü `SHA256SUMS.txt` ile karşılaştırabilirsiniz.
+| Dosya | Açıklama |
+|---|---|
+| `Serpent.Studio.AppImage` | Taşınabilir bağımsız uygulama paketi |
+| `SHA256SUMS.txt` | Kriptografik doğrulama özeti |
