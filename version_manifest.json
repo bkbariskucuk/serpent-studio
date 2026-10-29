@@ -1,12 +1,12 @@
 {
-  "latest_version": "v1.2.72.83",
+  "latest_version": "v1.2.72.84",
   "min_supported_version": "v0.2.50.00",
   "mandatory": false,
   "release_date": "2026-10-29",
-  "release_title": "Serpent Studio v1.2.72.83",
-  "release_notes": "Release v1.2.72.83: Design tree undo/redo, pan/scroll, sticky headers and collapsible details panel",
-  "sha256": "b5c592da962f7f8116b786839a7229ea7f9a7370b60772f45a26586422a939da",
+  "release_title": "Serpent Studio v1.2.72.84",
+  "release_notes": "Release v1.2.72.84: Filter out refs/stash internal git references from design tree graph",
+  "sha256": "97a594ffd7a7faac822b37ccd47a35422370f4a512717734578dee81c871a718",
   "file_size_bytes": 141990392,
-  "download_url": "https://github.com/bkbariskucuk/serpent-studio/releases/download/v1.2.72.83/Serpent.Studio.AppImage",
-  "zsync_url": "https://github.com/bkbariskucuk/serpent-studio/releases/download/v1.2.72.83/Serpent.Studio.AppImage.zsync"
+  "download_url": "https://github.com/bkbariskucuk/serpent-studio/releases/download/v1.2.72.84/Serpent.Studio.AppImage",
+  "zsync_url": "https://github.com/bkbariskucuk/serpent-studio/releases/download/v1.2.72.84/Serpent.Studio.AppImage.zsync"
 }
