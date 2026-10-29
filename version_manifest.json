@@ -1,12 +1,12 @@
 {
-  "latest_version": "v1.2.72.82",
+  "latest_version": "v1.2.72.83",
   "min_supported_version": "v0.2.50.00",
   "mandatory": false,
   "release_date": "2026-10-29",
-  "release_title": "Serpent Studio v1.2.72.82",
-  "release_notes": "Release v1.2.72.82: Git-backed design version tree, workspace tree branch items, vector SVG buttons and Ctrl+S branch toast",
-  "sha256": "af36a9f8a807ae5c2e6852506f0cdc422e1b68e787791d4d8691697b9fd7c989",
-  "file_size_bytes": 141928952,
-  "download_url": "https://github.com/bkbariskucuk/serpent-studio/releases/download/v1.2.72.82/Serpent.Studio.AppImage",
-  "zsync_url": "https://github.com/bkbariskucuk/serpent-studio/releases/download/v1.2.72.82/Serpent.Studio.AppImage.zsync"
+  "release_title": "Serpent Studio v1.2.72.83",
+  "release_notes": "Release v1.2.72.83: Design tree undo/redo, pan/scroll, sticky headers and collapsible details panel",
+  "sha256": "b5c592da962f7f8116b786839a7229ea7f9a7370b60772f45a26586422a939da",
+  "file_size_bytes": 141990392,
+  "download_url": "https://github.com/bkbariskucuk/serpent-studio/releases/download/v1.2.72.83/Serpent.Studio.AppImage",
+  "zsync_url": "https://github.com/bkbariskucuk/serpent-studio/releases/download/v1.2.72.83/Serpent.Studio.AppImage.zsync"
 }
