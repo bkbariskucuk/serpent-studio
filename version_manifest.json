@@ -1,12 +1,12 @@
 {
-  "latest_version": "v1.2.72.84",
+  "latest_version": "v1.2.72.85",
   "min_supported_version": "v0.2.50.00",
   "mandatory": false,
   "release_date": "2026-10-29",
-  "release_title": "Serpent Studio v1.2.72.84",
-  "release_notes": "Release v1.2.72.84: Filter out refs/stash internal git references from design tree graph",
-  "sha256": "97a594ffd7a7faac822b37ccd47a35422370f4a512717734578dee81c871a718",
-  "file_size_bytes": 141990392,
-  "download_url": "https://github.com/bkbariskucuk/serpent-studio/releases/download/v1.2.72.84/Serpent.Studio.AppImage",
-  "zsync_url": "https://github.com/bkbariskucuk/serpent-studio/releases/download/v1.2.72.84/Serpent.Studio.AppImage.zsync"
+  "release_title": "Serpent Studio v1.2.72.85",
+  "release_notes": "Release v1.2.72.85: Fork point node preservation on trunk, full Turkish branch names, and organic achievement branch growth animation",
+  "sha256": "76d3297a0296c18dcab11e55802109ac8db12a83def4e35360a4d45499bea986",
+  "file_size_bytes": 142019064,
+  "download_url": "https://github.com/bkbariskucuk/serpent-studio/releases/download/v1.2.72.85/Serpent.Studio.AppImage",
+  "zsync_url": "https://github.com/bkbariskucuk/serpent-studio/releases/download/v1.2.72.85/Serpent.Studio.AppImage.zsync"
 }
