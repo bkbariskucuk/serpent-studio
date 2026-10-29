@@ -1,6 +1,6 @@
-# Serpent Studio v1.2.72.81 (Alpha)
+# Serpent Studio v1.2.72.82 (Alpha)
 
-[Serpent.Studio.AppImage indir](https://github.com/bkbariskucuk/serpent-studio/releases/download/v1.2.72.81/Serpent.Studio.AppImage)
+[Serpent.Studio.AppImage indir](https://github.com/bkbariskucuk/serpent-studio/releases/download/v1.2.72.82/Serpent.Studio.AppImage)
 
 ```bash
 chmod +x Serpent.Studio.AppImage
@@ -9,30 +9,29 @@ chmod +x Serpent.Studio.AppImage
 
 Linux x86_64 (Ubuntu 20.04 / Debian 11 ve üzeri). FUSE bulunmayan sistemlerde `--appimage-extract-and-run` parametresiyle çalıştırılabilir. Python veya ek bağımlılık kurulumu gerektirmez.
 
-## v1.2.72.81 ile Gelen Yenilikler ve Düzeltmeler
+## v1.2.72.82 ile Gelen Yenilikler ve Düzeltmeler
 
-* **Çekirdek Matrisi ve Latisinde Dinamik Su / Soğutucu Pini Algoritması (`ui/main_window.py`):**
-  * Sabit/ezbere pin numaraları (0, 4, 99) arama davranışı tamamen kaldırıldı.
-  * İki aşamalı dinamik tespit: Malzeme tanımlarından (`mat ...`) soğutucu malzeme tespit edilir; ana çekirdek latisi (`lat 999` / `core_matrix`) taranarak yakıt demetleri (`custom_assemblies`) dışında kullanılan gerçek soğutucu pini izole edilir.
-  * `smart_validasyon` dosyasında demet içi kılavuz tüpleri (`4`) ve zehir çubukları (`7`) elenerek yalnızca ana latis soğutucusu (`99`) çekirdek paletine eklenir.
-  * Tuval boyama, su hücresi atama ve dış halka su temizleme butonları tespit edilen dinamik soğutucu piniyle senkronize çalışır.
+* **Git Tabanlı Tasarım Versiyon Ağacı (Design Version Tree & Branch Studio):**
+  * Sıfır ek bağımlılık: Sistemde `git` kuruluysa yerel CLI hızlandırması, kurulu değilse gömülü saf Python `EmbeddedDesignVCS` motoru kesintisiz çalışır.
+  * GitLab Network / EISquare GitFlow tarzı paralel yüzme kulvarları (swimlanes), yumuşak kübik bezier bağlantıları ve parlayan aktif HEAD düğümü.
+  * Tasarım Değişiklik Önizleme Kartı (Hover Preview HUD): Fare kontrol noktası üzerine geldiğinde commit mesajı, dal adı ve reaktör semantik nükleer farklarını (Malzeme, Pin, Lattice, Yüzey, Dedektör kartları) anlık gösterir.
+  * Dal Yönetimi: Dala çift tıklamayla anında geçiş (checkout), dal silme, dal yeniden adlandırma, dal birleştirme (merge) ve çakışma durumunda otomatik rollback koruması.
 
-* **Alt Paneller Çoklu Pop-out (Both Popout) Araç Çubuğu Senkronizasyonu (`ui/main_window.py`, `ui/workflow_dialogs.py`):**
-  * Konsol ve Preflight panelleri birlikte ayrıldığında (`DetachedBottomNotebookWindow`) konsol araç çubuğunun (Clear, Copy, Find, Settings, filtre çipleri) kaybolması kusuru giderildi.
-  * Ayrılmış çoklu sekme penceresinde Console sekmesinde köşe bileşeni olarak `cmd_toolbar`, Preflight Results aktifken `btn_dock_back` dinamik olarak atanır.
-  * Konsol başlığı ile log metni arasındaki 39 px'lik görünmez dikey boşluk sıfırlandı; alt panel daraltıldığında dahi log yazılarının ezilmesi önlendi.
+* **Çalışma Alanı Ağacı (Workspace Tree) Klasör Bazlı Dal Butonu / Öğesi:**
+  * Eski snapshot klasörünün yerini alan, her çalışma alanı ve proje klasörünün en üstünde yer alan `[Tasarım Dalları / Design Branches]` öğesi geri getirildi.
+  * Çift tıklama ve Enter tuşu ile doğrudan ilgili klasörün Tasarım Ağacı penceresini açar; sağ tık menüsünden doğrudan dal yönetimine erişilir.
 
-* **Çekirdek Yükseklik ve Adım Kararlılığı (`core/input_parser.py`, `ui/main_window.py`):**
-  * Kontrol çubuğu kaydırıcısı oynatıldığında veya Ctrl+S yapıldığında kontrol çubuğu uç düzlemlerinin (`pz`) çekirdek eksenel boyutunu şişirmesi ve kullanıcının girdiği `core_height_spin` değerini ezmesi engellendi.
-  * `_user_set_core_pitch` bayrağı ile kullanıcının manuel girdiği `pitch_spin` adımı koruma altına alındı.
+* **Vektörel SVG İkon Seti ve Glif / Tofu Hatası Giderimi:**
+  * Karakter emojileri yerine HiDPI vektörel SVG ikon seti (`branch`, `branch_new`, `branch_edit`, `branch_delete`, `commit`, `merge`, `switch`, `diff`).
+  * Toolbar genişlik çakışması (1264px -> 871px) giderildi; buton metinleri ve dolguları kompaktlaştırılarak ferah bir yerleşim sağlandı.
 
-* **Preflight Paneli Dikey Alan Tasarrufu ve Kategori Filtreleme (`ui/preflight_panel.py`):**
-  * Özet rozetleri ve "Preflight" başlığı tek satıra indirgendi; başlık yerine tıklanabilir checkable filtre çipleri (`Error`, `Warning`, `Info`, `Passed`) yerleştirildi. Ağaç görünümüne dikeyde geniş alan kazandırıldı.
+* **Ctrl+S ve Farklı Kaydet Dal Popout Bildirimi (Branch Save Toast):**
+  * Kaydetme yapıldığında ekranın sağ alt köşesinde beliren, aktif dal renginde vektörel dal simgesi, aktif dal adı (`[  master ]`), dosya adı ve Tasarım Ağacı kısayolu sunan modern toast bildirimi.
+  * Tek tıkla Tasarım Ağacı'nı açma, fare üzerine gelindiğinde otomatik kapanmayı duraklatma (hover pause), hızlı kapatma ve dinamik istifleme.
+  * §7 Erişilebilirlik (reduced_motion) standardına tam uyum: Animasyonları Durdur tercihi etkinken animasyonlar atlanır, anında açılıp kapanır.
 
-* **Kontrol Çubuğu Dinamik Malzemeleri ve Reflektör Senkronizasyonu (`ui/control_rods.py`, `ui/main_window.py`):**
-  * Kontrol Çubuğu sekmesindeki soğurucu malzeme listesi projedeki malzeme tablosundan (`mat_table`) dinamik olarak beslendi.
-  * Core Editor reflektör seçimi malzeme tablosuyla iki yönlü bağlandı; reflektör seçildiğinde malzeme listesine otomatik eklenir, değiştirildiğinde eskisi güncellenir.
-  * Altıgen sınır açısı (Hex Angle) kilidi açılarak 0° (`hexxc`) ve 30° (`hexyc`) yönelimleri çift yönlü senkronize edildi.
+* **Eski Snapshot Kurgusunun Emekliye Ayrılması:**
+  * Diskte kopyalama yapan eski `snapshots/` klasörleri kaldırıldı; elektrik kesintisi ve çökme koruması sunan Auto-Recovery Draft mekanizması gizli `.recovery_draft.json` üzerinde izole edildi.
 
 ## İndirme ve Doğrulama
 
