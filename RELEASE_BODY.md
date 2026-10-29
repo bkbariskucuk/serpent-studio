@@ -1,6 +1,6 @@
-# Serpent Studio v1.2.72.84 (Alpha)
+# Serpent Studio v1.2.72.85 (Alpha)
 
-[Serpent.Studio.AppImage indir](https://github.com/bkbariskucuk/serpent-studio/releases/download/v1.2.72.84/Serpent.Studio.AppImage)
+[Serpent.Studio.AppImage indir](https://github.com/bkbariskucuk/serpent-studio/releases/download/v1.2.72.85/Serpent.Studio.AppImage)
 
 ```bash
 chmod +x Serpent.Studio.AppImage
@@ -8,6 +8,22 @@ chmod +x Serpent.Studio.AppImage
 ```
 
 Linux x86_64 (Ubuntu 20.04 / Debian 11 ve üzeri). FUSE bulunmayan sistemlerde `--appimage-extract-and-run` parametresiyle çalıştırılabilir. Python veya ek bağımlılık kurulumu gerektirmez.
+
+## v1.2.72.85 ile Gelen Yenilikler ve Düzeltmeler
+
+* **Çatallanma Noktasının (Fork Point) Ana Dalda Sabitlenmesi & Ray Kilitleme:**
+  * "Master dalındaki ikinci düğümden yeni dal açıldığında ikinci düğüm yeni dala alınıyor" sorunu giderildi (`ui/design_tree_graph.py`).
+  * Soyağacı (DAG) ray kilitleme algoritması (`_recompute_node_rails`): Ana gövde (master/main) aşamaları ilk sırada taranarak daima Ray 0'a sabitlenir.
+  * Temel kural: Bir ana dal düğümü (çatallanma noktası) asla çocuk dal tarafından gasp edilmez. İkinci düğüm master üzerinde sabit kalır; yeni dal o düğümden türeyerek kendi yatay düzlemine (Ray 1) bağlanır ve kendi rayında dümdüz akar.
+* **Tam Türkçe ve Unicode Dal İsmi Desteği (`core/version_control.py`, `ui/design_tree_dialog.py`):**
+  * ASCII-only kısıtlaması kaldırıldı (`sanitize_branch_name`); Türkçe karakterler (`ç, ğ, ı, ö, ş, ü, Ç, Ğ, İ, Ö, Ş, Ü`), sayılar, altçizgi ve tireler tam korunur.
+  * Git ref standartlarına uygun olarak geçersiz karakterler ve boşluklar normalize edilir.
+* **Gerçek Dal Uzaması ve Oyun Tarzı "Achievement" Büyüme Animasyonu (`ui/design_tree_graph.py`, `ui/theme.py`, `ui/design_tree_dialog.py`):**
+  * De Casteljau kübik Bezier alt-eğri algoritması (`sub_bezier`) ile dallar zaman çizelgesi boyunca ana kökten çocuklara doğru organik biçimde uzar.
+  * Aktif uzayan dal ucunda yüksek ışıltılı enerji kıvılcımı (radyal aura + çekirdek parçacık) yolu takip eder.
+  * Dal yeni bir düğüme ulaştığında oyunlardaki başarım kilit açılışı ("Achievement Unlocked") benzeri genişleyen ve sönen halka şok dalgası (shockwave pulse ring) belirir.
+  * Araç çubuğuna "Canlandır" butonu (`btn_animate`, `F6`, `Boşluk`) eklendi.
+  * Erişilebilirlik kuralına (Rule 7) tam uyum: `reduced_motion` aktifken animasyon anında tamamlanır, 0 ms gecikme sağlanır.
 
 ## v1.2.72.84 ile Gelen Yenilikler ve Düzeltmeler
 
