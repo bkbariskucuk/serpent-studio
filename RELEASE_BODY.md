@@ -11,6 +11,21 @@ Linux x86_64 (Ubuntu 20.04 / Debian 11 ve üzeri). FUSE bulunmayan sistemlerde `
 
 ## v1.2.72.83 ile Gelen Yenilikler ve Düzeltmeler
 
+* **Tasarım Ağacı Tuvalinde Çift Yönlü Serbest Kaydırma (Pan & Multi-Directional Scroll):**
+  * Fare ile Tuval Sürükleme (Drag-to-Pan): Boş tuval alanına sol tıklayarak veya herhangi bir noktada orta tuşla sürükleyerek tuvali yatay ve dikey yönde serbestçe kaydırma imkanı (Figma/Miro/GitKraken tarzı akıcı pan desteği).
+  * Akıllı Fare Tekerleği & Dokunmatik Yüzey: Dikey eksende dal biriktiğinde normal tekerlek dikey kaydırır; dallar dikeyde sığıyorsa veya `Shift + Tekerlek` yapıldığında otomatik olarak yatay zaman çizelgesini kaydırır.
+  * Klavye Yön Tuşları: Sol/Sağ/Yukarı/Aşağı ok tuşları ile hassas kaydırma; `Home` tuşu ile başlangıç köküne, `End` tuşu ile en güncel commit düğümüne anında atlama.
+  * Aktif Commit Düğümüne Otomatik Odaklanma: Diyalog açıldığında veya dal değiştirildiğinde en güncel aktif HEAD commit düğümünü görünür alanın merkezine getiren yumuşak auto-scroll mekanizması.
+
+* **Yapışkan (Sticky) Dal Başlıkları & Dal Ezilmesini Önleme:**
+  * Sağa doğru ne kadar kaydırılırsa kaydırılsın, sol taraftaki dal rozetleri (`master (Trunk)`, `feature_a` vb.) görünür pencere sol kenarında sabit (pinned) kalır; kullanıcının baktığı kulvarın hangi dala ait olduğu her zaman görünür.
+  * Cömert tuval payı (+360 px yatay, +120 px dikey) ile son düğümlerin ve dal çizgilerinin sağ panel sınırına dayanıp ezilmesi engellendi.
+  * Hover HUD Bilgi Kartı pencere sınırına kilitlendi: Sağ panel yakınına gelindiğinde kart otomatik olarak imlecin soluna ters döner; panel altına girip ezilme sorunu tamamen giderildi.
+
+* **Katlanabilir / Boyutlandırılabilir Sağ Detay Paneli (`Ctrl+D`):**
+  * "Dallar sağ panel tarafından eziliyor" geri bildirimi doğrultusunda sağ detay panelinin minimum genişliği 240 piksele düşürüldü ve başlangıç bölme oranı grafik lehine 900:260 olarak ayarlandı.
+  * Araç çubuğuna ve detay paneli başlığına aç/kapa butonu (`btn_toggle_details`, `Ctrl+D`, `✕`) eklendi; istenildiğinde detay paneli gizlenerek tüm ekran (%100 genişlik) dal grafiğine ayrılabilir.
+
 * **Tasarım Versiyon Ağacı Geri Al ve Yinele Desteği (Ctrl+Z / Ctrl+Y / Ctrl+Shift+Z):**
   * Çift motorlu (Sistem Git CLI ve Saf Python VCS) derin undo/redo mimarisi (`core/version_control.py`).
   * Dal açma (`create_branch`), dal silme (`delete_branch`), dal yeniden adlandırma (`rename_branch`), dal değiştirme (`switch_branch`), aşama kaydetme (`commit_design`) ve dal birleştirme (`merge_branch`) işlemleri eksiksiz geri alınabilir ve yinelenebilir.
@@ -19,15 +34,9 @@ Linux x86_64 (Ubuntu 20.04 / Debian 11 ve üzeri). FUSE bulunmayan sistemlerde `
 
 * **Araç Çubuğu (Toolbar) Yerleşim ve Taşma Çözümü (`ui/design_tree_dialog.py`):**
   * "Butonlar sığmamış yerlerine" geri bildirimi ve dar ekranlarda butonların üst üste binmesi sorunu kökten çözüldü.
-  * Geri Al (`btn_undo`), Yinele (`btn_redo`) ve Yenile (`btn_refresh`) butonları 28×28 piksel kompakt HiDPI vektörel SVG ikon butonlarına dönüştürüldü.
+  * Geri Al (`btn_undo`), Yinele (`btn_redo`), Yenile (`btn_refresh`) ve Detay Paneli (`btn_toggle_details`) butonları 28×28 piksel kompakt HiDPI vektörel SVG ikon butonlarına dönüştürüldü.
   * Dinamik açıklayıcı ipucu (tooltip): Butonun üzerine gelindiğinde bir sonraki geri alınacak/yinelenecek somut işlem adı ve kısayolu (`Geri Al: '18_cr_test' dalını oluşturma (Ctrl+Z)`) dinamik olarak gösterilir.
   * Minimum pencere boyutu 960×560 px olarak sabitlendi. Hem Türkçe hem İngilizce dil modlarında tüm buton ve girişlerin 0 px çakışmayla ferah oturması garanti edildi.
-
-* **Git Tabanlı Reaktör Tasarım Ağacı (Design Version Tree) & Dal Stüdyosu:**
-  * Sıfır harici bağımlılık: Sistemde Git kuruluysa yerel CLI hızlandırması, kurulu değilse gömülü saf Python motoru kesintisiz çalışır.
-  * EISquare GitFlow tarzı yüzme kulvarları (swimlanes), kübik bezier bağlantıları ve parlayan aktif HEAD düğümü.
-  * Hover Preview HUD: Fare kontrol noktası üzerine geldiğinde reaktör semantik nükleer farklarını (Malzeme, Pin, Lattice, Yüzey, Dedektör) anlık gösterir.
-  * Çalışma alanı klasör bazlı dal butonu (`[Tasarım Dalları / Design Branches]`) ve Ctrl+S dal rozetli popout bildirimi (`BranchSaveToast`).
 
 ## İndirme ve Doğrulama
 
