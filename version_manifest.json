@@ -1,12 +1,12 @@
 {
-  "latest_version": "v1.2.72.85",
+  "latest_version": "v1.2.72.86",
   "min_supported_version": "v0.2.50.00",
   "mandatory": false,
   "release_date": "2026-10-29",
-  "release_title": "Serpent Studio v1.2.72.85",
-  "release_notes": "Release v1.2.72.85: Fork point node preservation on trunk, full Turkish branch names, and organic achievement branch growth animation",
-  "sha256": "76d3297a0296c18dcab11e55802109ac8db12a83def4e35360a4d45499bea986",
-  "file_size_bytes": 142019064,
-  "download_url": "https://github.com/bkbariskucuk/serpent-studio/releases/download/v1.2.72.85/Serpent.Studio.AppImage",
-  "zsync_url": "https://github.com/bkbariskucuk/serpent-studio/releases/download/v1.2.72.85/Serpent.Studio.AppImage.zsync"
+  "release_title": "Serpent Studio v1.2.72.86",
+  "release_notes": "Release v1.2.72.86: Instant visual fork curve connection and dynamic branch head node for newly created branches",
+  "sha256": "567789bf4ea56e128b71afc51f82346f0160bcb8d9a196ed8bfcae6f81c799d8",
+  "file_size_bytes": 142027256,
+  "download_url": "https://github.com/bkbariskucuk/serpent-studio/releases/download/v1.2.72.86/Serpent.Studio.AppImage",
+  "zsync_url": "https://github.com/bkbariskucuk/serpent-studio/releases/download/v1.2.72.86/Serpent.Studio.AppImage.zsync"
 }
