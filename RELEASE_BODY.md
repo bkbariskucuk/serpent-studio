@@ -1,6 +1,6 @@
-# Serpent Studio v1.2.72.87 (Alpha)
+# Serpent Studio v1.3.73.88 (Alpha)
 
-[Serpent.Studio.AppImage indir](https://github.com/bkbariskucuk/serpent-studio/releases/download/v1.2.72.87/Serpent.Studio.AppImage)
+[Serpent.Studio.AppImage indir](https://github.com/bkbariskucuk/serpent-studio/releases/download/v1.3.73.88/Serpent.Studio.AppImage)
 
 Linux x86_64 · Debian 11 / Ubuntu 20.04 ve üzeri · GLIBC 2.31 tabanı.
 
@@ -9,23 +9,28 @@ chmod +x Serpent.Studio.AppImage
 ./Serpent.Studio.AppImage
 ```
 
-FUSE bulunmayan sistemlerde `--appimage-extract-and-run` kullanılabilir. Python kurulumu gerekmez. Gerçek Git ve uzak depo işlemleri için sistemde Git bulunmalıdır; Git olmadan yerel gömülü tasarım geçmişi kullanılabilir.
+FUSE bulunmayan sistemlerde `--appimage-extract-and-run` kullanılabilir. Arayüz için Python kurulumu gerekmez; simülasyon ve kontrol çalışmaları ayrıca Serpent kurulumu gerektirir.
 
 ## Bu sürümde
 
-- **Dosya bazlı tasarım geçmişi:** Aynı klasördeki her `.txt` için bağımsız dallar, aşamalar, geri alma/yineleme, renkler ve uzak depo bağlantısı. Dal penceresi ek dosya sorusu çıkarmadan açılır; dosya üstteki listeden değiştirilebilir.
-- **Dallanma ve birleştirme:** Seçili daldan alt dal açma, ilk aşamadan önce görünür dal bağlantısı, düğüme çift tıklayarak ilgili dala geçiş. Birleştirme önizlemesi, yan yana farklar ve çakışma uyarıları. Dal silmede birleşmemiş kayıt ve güncel revizyon kontrolleri.
-- **GitLab / GitHub API:** Sunucu adresi ve kişisel erişim tokenıyla depo seçimi; birleştirme isteği/PR oluşturma, inceleme ve birleştirme; iş kaydı oluşturma, kapatma ve yeniden açma. Uzak dalı yerelde açma, Gönder ve Güncellemeleri Al butonları.
-- **Düğüm notları:** Aşamalara kullanıcı notu ekleme/düzenleme/silme, notlu düğüm simgesi ve notlarda arama. Notlar yeniden açılışta korunur.
-- **Görsel düzenlemeler:** Belirgin düğüm seçim halkası, dal ile aynı renkte ana panel simgesi, küçük pencerelerde kaydırılabilir detay paneli. Ortak renk seçici; görsel seçim, HEX/RGB, palet ve son renkler. Yinelenen üst araç çubuğu sürüm kontrol düğmesi kaldırıldı.
-- **Kararlılık:** Kapalı dal grafiğine animasyon callback'i kaynaklı Qt çökmesi düzeltildi. Simülasyon çıktıları ve komşu tasarım dosyaları dosya sürüm işlemlerine dahil edilmez.
+- **Yenilenen çalışma alanı:** Model, Analysis, Design History ve Thermal Hydraulics sekmeleri; editörle uyumlu görünüm, kompakt araç çubukları ve yumuşak geçişler. Modelin mevcut editörleri ve pop-out işlevleri korunur.
+- **Daha rahat analiz:** Sonuç kümesi seçimi ve tüm analiz çıktıları sekmeli düzende. Çıktı sekmelerinin tamamı tek ayrık pencereye taşınabilir. PPF legend/metrik kutuları sabit, fit kararlı; elle yapılan zoom ve kaydırma korunur.
+- **Analiz hazırlığı ve performans:** İsteğe bağlı splash ön yüklemesi, ayrı analiz süreci, ayarlanabilir bellek bütçesi ve iptal. Eksik uygunluk kaydından doğan GUI hesaplaması ve sekme geçişlerindeki donma yolları düzeltildi. Ön yükleme gerçek sonuç dosyalarının hesaplama süresini ortadan kaldırmaz.
+- **Run geçmişi:** Düğüm başına çoklu run, saklanan çıktı kopyaları, geçmiş sonuç kümeleri, kayıtlı çalışma koşulları ve referansla karşılaştırma. Tarihsel geometri canlı tasarımı değiştirmeden incelenir.
+- **Girdi ve simülasyon:** Operation/önizleme senkronizasyonu; `set iter`, `set rfr`, `set rfw`; değişen satıra gitme; Stop; süre ve konsol tanılarının düzeltilmesi. Kontrol çubukları mevcut demetlere atanabilir.
+- **Kontrol çalışmaları:** Kritik çubuk araması, k-eff veya k-eff + PPF banka optimizasyonu, native transient güç PID ve grup bazlı PPF düzeltmeleri. Kayıtlı konumlar tablo, CSV ve 3D görünümde sunulur.
+- **3D inceleme:** Zoom, pan, döndürme, kamera yönleri, ortografik/perspektif, X/Y/Z kesitleri, düzlemsel kesit, ölçüm, banka izolasyonu ve PNG/SVG/PDF dışa aktarma. Rod hareketinde ağır önizleme güncellemeleri etkileşim sonunda birleştirilir.
 
-## Geçiş ve bağlantı bilgileri
+## Kapsam ve geçiş bilgileri
 
-Önceki klasör geçmişi korunur; yeni dosya geçmişi mevcut `.txt` dosyasından başlar. Dosyayı yeniden adlandırmak eski yerel geçmişi otomatik taşımaz. Dal renkleri ve düğüm notları yereldir, uzak depoya gönderilmez. Tokenlar yalnız uygulama oturumunda bellekte tutulur; uygulama yeniden açıldığında tekrar girilir.
+Bağımsız dört sayaç politikası: `v1.2.72.87 → v1.3.73.88`; alt sayaçlar sıfırlanmaz.
 
-Uzak istekler aynı dosyanın gönderilmiş dallarıyla, iş kayıtları bu dosya için uygulamadan açılan kayıtlarla sınırlıdır. API üzerinden birleştirme yerel dosyayı kendiliğinden değiştirmez; hedef dalda Güncellemeleri Al kullanılır. Canlı GitLab/GitHub hesabıyla uçtan uca doğrulama yapılmadı; REST sözleşmeleri sahte HTTP taşımasıyla, Git gönderme/alma geçici bare depolarla sınandı.
+3D görünüm kabul edilmiş demet/çubuk modelini gösterir; genel Serpent CSG plotter değildir. PPF sınırları tasarıma göre kullanıcı tarafından belirlenir. Banka araması yerel, dinamik şekil düzeltmesi heuristiktir; küresel optimum, reaktöre özgü benchmark veya güvenlik sertifikasyonu iddiası yoktur. Dinamik çalışmalarda TH geri beslemesi uygulanmaz.
 
-## Paket doğrulama
+Run arşivleri yereldir; otomatik kota/temizleme ve Git ile sonuç gönderme yoktur. Önceden üzerine yazılmış eski sonuçlar geri üretilemez. Dağıtım temiz çalışma alanıyla açılır; mevcut kullanıcı projelerini taşımaz veya silmez.
 
-Dağıtım standart yayın betiği üzerinden sürüm/içerik özeti, GLIBC tabanı, temiz paket ve yalıtılmış GUI açılış kontrollerinden geçirilir. İndirilen dosyanın özetini bu release'teki `SHA256SUMS.txt` veya `SHA512SUMS.txt` ile karşılaştırabilirsiniz.
+Dosya bazlı Git/GitLab/GitHub bağlantıları korunur. API tokenları yalnız oturum belleğindedir; uzak Git işlemleri sistem Git'ini gerektirir.
+
+## Doğrulama
+
+Yayın betiği regresyon testlerini, gömülü sürüm/kaynak özetini, GLIBC tabanını, temiz paket/GUI açılışını ve yüklenen asset özetlerini denetler. İndirilen dosyayı release'teki `SHA256SUMS.txt` veya `SHA512SUMS.txt` ile karşılaştırabilirsiniz.
