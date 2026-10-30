@@ -1,12 +1,12 @@
 {
-  "latest_version": "v1.2.72.87",
+  "latest_version": "v1.3.73.88",
   "min_supported_version": "v0.2.50.00",
   "mandatory": false,
-  "release_date": "2026-10-29",
-  "release_title": "Serpent Studio v1.2.72.87",
-  "release_notes": "Dosya bazlı tasarım geçmişi, GitLab/GitHub API, düğüm notları ve arayüz iyileştirmeleri",
-  "sha256": "e2bdd82848758a188f1e30df190947f90a96068ba219718964e7d32d1697f8c9",
-  "file_size_bytes": 142617080,
-  "download_url": "https://github.com/bkbariskucuk/serpent-studio/releases/download/v1.2.72.87/Serpent.Studio.AppImage",
-  "zsync_url": "https://github.com/bkbariskucuk/serpent-studio/releases/download/v1.2.72.87/Serpent.Studio.AppImage.zsync"
+  "release_date": "2026-10-30",
+  "release_title": "Serpent Studio v1.3.73.88",
+  "release_notes": "Serpent Studio v1.3.73.88",
+  "sha256": "e03ebf5c5971f58a9b4712cf0a5bdec8744bf4ccaaeab09e5284953251321e59",
+  "file_size_bytes": 144325112,
+  "download_url": "https://github.com/bkbariskucuk/serpent-studio/releases/download/v1.3.73.88/Serpent.Studio.AppImage",
+  "zsync_url": "https://github.com/bkbariskucuk/serpent-studio/releases/download/v1.3.73.88/Serpent.Studio.AppImage.zsync"
 }
