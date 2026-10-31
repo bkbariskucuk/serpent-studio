@@ -1,6 +1,6 @@
-# Serpent Studio v1.3.73.88 (Alpha)
+# Serpent Studio v1.4.74.89 (Alpha)
 
-[Serpent.Studio.AppImage indir](https://github.com/bkbariskucuk/serpent-studio/releases/download/v1.3.73.88/Serpent.Studio.AppImage)
+[Serpent.Studio.AppImage indir](https://github.com/bkbariskucuk/serpent-studio/releases/download/v1.4.74.89/Serpent.Studio.AppImage)
 
 Linux x86_64 · Debian 11 / Ubuntu 20.04 ve üzeri · GLIBC 2.31 tabanı.
 
@@ -13,24 +13,27 @@ FUSE bulunmayan sistemlerde `--appimage-extract-and-run` kullanılabilir. Arayü
 
 ## Bu sürümde
 
-- **Yenilenen çalışma alanı:** Model, Analysis, Design History ve Thermal Hydraulics sekmeleri; editörle uyumlu görünüm, kompakt araç çubukları ve yumuşak geçişler. Modelin mevcut editörleri ve pop-out işlevleri korunur.
-- **Daha rahat analiz:** Sonuç kümesi seçimi ve tüm analiz çıktıları sekmeli düzende. Çıktı sekmelerinin tamamı tek ayrık pencereye taşınabilir. PPF legend/metrik kutuları sabit, fit kararlı; elle yapılan zoom ve kaydırma korunur.
-- **Analiz hazırlığı ve performans:** İsteğe bağlı splash ön yüklemesi, ayrı analiz süreci, ayarlanabilir bellek bütçesi ve iptal. Eksik uygunluk kaydından doğan GUI hesaplaması ve sekme geçişlerindeki donma yolları düzeltildi. Ön yükleme gerçek sonuç dosyalarının hesaplama süresini ortadan kaldırmaz.
-- **Run geçmişi:** Düğüm başına çoklu run, saklanan çıktı kopyaları, geçmiş sonuç kümeleri, kayıtlı çalışma koşulları ve referansla karşılaştırma. Tarihsel geometri canlı tasarımı değiştirmeden incelenir.
-- **Girdi ve simülasyon:** Operation/önizleme senkronizasyonu; `set iter`, `set rfr`, `set rfw`; değişen satıra gitme; Stop; süre ve konsol tanılarının düzeltilmesi. Kontrol çubukları mevcut demetlere atanabilir.
-- **Kontrol çalışmaları:** Kritik çubuk araması, k-eff veya k-eff + PPF banka optimizasyonu, native transient güç PID ve grup bazlı PPF düzeltmeleri. Kayıtlı konumlar tablo, CSV ve 3D görünümde sunulur.
-- **3D inceleme:** Zoom, pan, döndürme, kamera yönleri, ortografik/perspektif, X/Y/Z kesitleri, düzlemsel kesit, ölçüm, banka izolasyonu ve PNG/SVG/PDF dışa aktarma. Rod hareketinde ağır önizleme güncellemeleri etkileşim sonunda birleştirilir.
+- **Seçilebilir birleştirme:** Kaynak/hedef dalları ve checkpoint'leri seçme; native Git ort ve gömülü üç yönlü birleştirme. Gömülü motorda çoklu ortak ata desteği. Çakışmalar numaralı Base/Mevcut/Gelen/Sonuç alanlarında, yalnız ilgili satırlar vurgulanarak incelenir.
+- **Daha anlaşılır kayıt:** Yeni dal seçilen eski kayıttan başlayabilir ve dal adıyla başlangıç checkpoint'i alır. Normal Kaydet yeni düğüm oluşturmaz. Merge öncesinde bekleyen değişiklikler karşılaştırılır; kullanıcı isterse checkpoint oluşturup devam eder.
+- **Geçmişi inceleme:** Eski checkpoint'in modeli ve kayıtlı analiz sonuçları açılabilir; düzenleme için yeni dala yönlendirilir. Güncel dal ucunda çalışırken gereksiz yeni dal uyarısı kaldırıldı. Üst göstergede checkpoint adı bulunur.
+- **Geçmiş araçları:** Doğrudan checkpoint silme incelemesi, taslaklar, cherry-pick/rebase, etiketler ve uzak ayrışmayı çözme akışları. GitLab/GitHub ekip yorumları, onaylar ve CI durumu uygulama içinden incelenebilir.
+- **Okunabilir dal grafiği:** 60 kayıt sınırı kaldırıldı; uzun geçmişte etkin dallar korunur. Kavisli bağlantılar ve yoğun dallanma yerleşimi iyileştirildi. Dal silme penceresinin tema uyumu düzeltildi.
+- **Kontrol çubuğu düzenleme:** Banka/demet atamasında yakıt, kılavuz halkaları ve mevcut kartlar korunur. Asimetrik kor sınırları doğru geri yüklenir. Desteklenmeyen dönüşümlü/çok parçalı geometrilerde açıklamalı kapsam denetimi bulunur.
+- **Anlık syntax geri bildirimi:** Çubuk düzenlemelerinde gerçek değişen satır ve değer sarı vurgulanır; ilgili önizleme konuma gider. Çelişen yinelenen tanımlar doğrudan gösterilir. Atama değişiklikleri lattice satırlarında da izlenir.
+- **Güncelleme bildirimi:** Kompakt sağ alt karta tıklamak Help → Check Updates penceresini açar.
 
 ## Kapsam ve geçiş bilgileri
 
-Bağımsız dört sayaç politikası: `v1.2.72.87 → v1.3.73.88`; alt sayaçlar sıfırlanmaz.
+Bağımsız dört sayaç politikası: `v1.3.73.88 → v1.4.74.89`; MINOR/PATCH/BUILD +1, alt sayaçlar sıfırlanmaz.
 
-3D görünüm kabul edilmiş demet/çubuk modelini gösterir; genel Serpent CSG plotter değildir. PPF sınırları tasarıma göre kullanıcı tarafından belirlenir. Banka araması yerel, dinamik şekil düzeltmesi heuristiktir; küresel optimum, reaktöre özgü benchmark veya güvenlik sertifikasyonu iddiası yoktur. Dinamik çalışmalarda TH geri beslemesi uygulanmaz.
+Mevcut eski kare dal referansları otomatik checkpoint'e dönüştürülmez; kullanıcı Checkpoint eylemini kullanabilir. Eski hedef kayda merge, sonraki geçmişi korumak üzere ayrı sonuç dalında yürür. Bazı geçmiş silme/rebase işlemleri native Git gerektirir ve yayımlanmış/karmaşık geçmişte sınırlanır. Gömülü motorun rename/özel merge driver desteği native Git ile tam eşdeğer değildir.
 
-Run arşivleri yereldir; otomatik kota/temizleme ve Git ile sonuç gönderme yoktur. Önceden üzerine yazılmış eski sonuçlar geri üretilemez. Dağıtım temiz çalışma alanıyla açılır; mevcut kullanıcı projelerini taşımaz veya silmez.
+Uzak Git işlemleri sistem Git'ini; API işlemleri sunucu izinlerini gerektirir. GitLab/GitHub ürünlerinin tamamının eşdeğeri değildir. API tokenları oturum belleğindedir. Run arşivleri yereldir; otomatik Git aktarımı veya temizleme yapılmaz. Dağıtım kullanıcı projesi içermez, mevcut çalışma dosyaları korunur.
 
-Dosya bazlı Git/GitLab/GitHub bağlantıları korunur. API tokenları yalnız oturum belleğindedir; uzak Git işlemleri sistem Git'ini gerektirir.
+Basit çubuk editörü üstten girişli iki bölgeli pz modeli içindir. Tam trans koordinat bileşimi, sonlu/çok parçalı çubuk düzenleme ve genel CSG görüntüleyici desteği eklenmemiştir. Kontrol çalışmaları ve PPF sınırları reaktöre özgü doğrulama gerektirir; dinamik PID'de TH geri beslemesi uygulanmaz.
 
 ## Doğrulama
 
-Yayın betiği regresyon testlerini, gömülü sürüm/kaynak özetini, GLIBC tabanını, temiz paket/GUI açılışını ve yüklenen asset özetlerini denetler. İndirilen dosyayı release'teki `SHA256SUMS.txt` veya `SHA512SUMS.txt` ile karşılaştırabilirsiniz.
+Çubuk akışları için 107 regresyon testi ve gerçek Serpent 2.2.3 ile beş sentetik iki-bankalı statik transport koşusu geçti. ANA_KEFF/IMP_KEFF değerleri ve bağıl belirsizlikleri bağımsız serpentTools okuyucusuyla eşleşti. Bu kontroller gerçek reaktör veya dinamik PID fiziksel validasyonu değildir.
+
+Yayın betiği regresyon testlerini, gömülü sürüm/kaynak özetini, GLIBC tabanını, temiz paket/GUI açılışını ve yüklenen asset özetlerini denetler. İndirilen dosyayı release'teki SHA256SUMS.txt veya SHA512SUMS.txt ile karşılaştırabilirsiniz.
