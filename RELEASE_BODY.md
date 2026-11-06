@@ -1,6 +1,6 @@
-# Serpent Studio v1.5.75.90
+# Serpent Studio v1.4.75.90
 
-- Bağımsız MINOR/PATCH/BUILD sayaçları +1; alt sayaçlar sıfırlanmadı.
+- Kullanıcı tercihiyle MINOR 4 korundu; bağımsız PATCH/BUILD sayaçları +1.
 - Dinamik dedektör envanteri, çok katmanlı datamesh ve enerji grupları düzenleme/yardım kartları; yerel undo/redo ve kompakt yerleşim.
 - İşletme komutları için tıklamalı EN/TR rehber, set seed desteği ve termal seçim doğrulaması.
 - Üç performans kademesi, yenilenen aurora açılışı, silüet uygulama ikonu ve masaüstü kurulum desteği.
