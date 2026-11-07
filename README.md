@@ -6,24 +6,19 @@ Serpent 2 Monte Carlo nötronik hesaplamaları için modern grafiksel kullanıc�
 
 ---
 
-## İndirme ve Hızlı Başlangıç
+## Kubuntu / Linux kurulumu
 
-En güncel sürümü [GitHub Releases](https://github.com/bkbariskucuk/serpent-studio/releases/latest) sayfasından veya terminalden tek komutla indirebilirsiniz:
+Uygulama menüsünde **Serpent Studio** olarak görünmesi için kullanıcı kurucusunu çalıştırın. `sudo` gerekmez; kurucu yayımlanmış AppImage'i indirir, SHA256 doğrulaması yapar, menü kaydını ve tüm logo boyutlarını kurar. Projeleri ve ayarları korur. Kurucu için Python 3 gerekir (Kubuntu'da bulunur); uygulamanın kendisi bağımsızdır.
 
 ```bash
-# AppImage dosyasını indirin
-curl -fL -o Serpent.Studio.AppImage \
-  https://github.com/bkbariskucuk/serpent-studio/releases/latest/download/Serpent.Studio.AppImage
-
-# Çalıştırma yetkisi verin ve başlatın
-chmod +x Serpent.Studio.AppImage
-./Serpent.Studio.AppImage
+curl -fL -o /tmp/serpent-studio-install.py \
+  https://raw.githubusercontent.com/bkbariskucuk/serpent-studio/codex/desktop-installation/install.py
+python3 /tmp/serpent-studio-install.py
 ```
 
-> **İpucu:** Sisteminizde FUSE yapılandırması bulunmuyorsa uygulamayı doğrudan şu komutla çalıştırabilirsiniz:
-> ```bash
-> ./Serpent.Studio.AppImage --appimage-extract-and-run
-> ```
+Ardından uygulama menüsünde **Serpent Studio** arayın; sağ tıkla görev yöneticisine sabitleyebilirsiniz. AppImage kalıcı olarak `~/.local/share/serpent-studio/application/` altına kurulur. Sadece AppImage'i indirmek/çalıştırmak menü kaydı oluşturmaz.
+
+Daha önce indirdiğiniz resmî dosyayı kullanmak için ikinci komuta `--appimage /dosyanın/yolu/Serpent.Studio.AppImage` ekleyebilirsiniz; sürüm/hash doğrulaması yine yapılır.
 
 ---
 
