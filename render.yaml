@@ -17,4 +17,4 @@ services:
       - key: SERPENT_LICENSE_PRIVATE_KEY
         sync: false
       - key: SERPENT_REQUIRE_DEVICE_BINDING
-        value: "0"
+        value: "1"

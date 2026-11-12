@@ -31,12 +31,14 @@ from typing import Any, Dict, List, Optional, Tuple
 if __package__:
     from .storage import Backend, validate_database_url
     from .licensing import (
-        DEVICE_LIMIT, HEARTBEAT_INTERVAL_SECONDS, LICENSE_TTL_SECONDS, LicenseSigner,
+        DEVICE_LIMIT, MAX_DEVICE_LIMIT, HEARTBEAT_INTERVAL_SECONDS, LICENSE_TTL_SECONDS,
+        LicenseSigner, validate_device_limit, validate_restricted_panels,
     )
 else:
     from storage import Backend, validate_database_url
     from licensing import (
-        DEVICE_LIMIT, HEARTBEAT_INTERVAL_SECONDS, LICENSE_TTL_SECONDS, LicenseSigner,
+        DEVICE_LIMIT, MAX_DEVICE_LIMIT, HEARTBEAT_INTERVAL_SECONDS, LICENSE_TTL_SECONDS,
+        LicenseSigner, validate_device_limit, validate_restricted_panels,
     )
 
 logger = logging.getLogger("serpent.control_plane")
@@ -46,12 +48,16 @@ DEFAULT_HOST = os.environ.get("SERPENT_CONTROL_PLANE_HOST", "0.0.0.0")
 DB_PATH = os.environ.get("SERPENT_CONTROL_PLANE_DB", os.path.join(os.path.dirname(__file__), "control_plane.db"))
 
 MIN_PASSWORD_LENGTH = 12
+PASSWORD_HASH_ITERATIONS = 600_000
+LEGACY_PASSWORD_HASH_ITERATIONS = 100_000
+MAX_PASSWORD_HASH_ITERATIONS = 2_000_000
+PASSWORD_HASH_PREFIX = "pbkdf2_sha256$v1$"
 SESSION_MAX_AGE = 90 * 86400
 MAX_REQUEST_BODY = 2 * 1024 * 1024
 REQUEST_TIMEOUT_SECONDS = 15
 MAX_CONCURRENT_REQUESTS = 32
 DEVICE_FINGERPRINT_RE = re.compile(r"^[0-9a-f]{64}$")
-REQUIRE_DEVICE_BINDING = os.environ.get("SERPENT_REQUIRE_DEVICE_BINDING", "0").strip().lower() not in ("0", "false", "no", "")
+REQUIRE_DEVICE_BINDING = os.environ.get("SERPENT_REQUIRE_DEVICE_BINDING", "1").strip().lower() not in ("0", "false", "no", "")
 
 
 def _load_server_version() -> str:
@@ -152,20 +158,48 @@ def validate_storage_configuration(db_path: str, database_url: str = '') -> None
 def hash_password(password: str, salt: Optional[str] = None) -> Tuple[str, str]:
     if not salt:
         salt = secrets.token_hex(16)
-    hashed = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), bytes.fromhex(salt), 100000).hex()
-    return hashed, salt
+    hashed = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), bytes.fromhex(salt), PASSWORD_HASH_ITERATIONS).hex()
+    return f"{PASSWORD_HASH_PREFIX}{PASSWORD_HASH_ITERATIONS}${hashed}", salt
+
+
+def _password_hash_parts(encoded: str) -> Tuple[int, str]:
+    if not isinstance(encoded, str):
+        raise ValueError("Invalid password hash.")
+    if re.fullmatch(r"[0-9a-f]{64}", encoded):
+        return LEGACY_PASSWORD_HASH_ITERATIONS, encoded
+    parts = encoded.split("$")
+    if (len(parts) != 4 or parts[:2] != ["pbkdf2_sha256", "v1"]
+            or not re.fullmatch(r"[1-9][0-9]{0,6}", parts[2])
+            or not re.fullmatch(r"[0-9a-f]{64}", parts[3])):
+        raise ValueError("Invalid password hash.")
+    iterations = int(parts[2])
+    if not LEGACY_PASSWORD_HASH_ITERATIONS <= iterations <= MAX_PASSWORD_HASH_ITERATIONS:
+        raise ValueError("Unsupported password work factor.")
+    return iterations, parts[3]
+
+
+def password_needs_rehash(encoded: str) -> bool:
+    iterations, _ = _password_hash_parts(encoded)
+    return not encoded.startswith(PASSWORD_HASH_PREFIX) or iterations < PASSWORD_HASH_ITERATIONS
 
 
 def verify_password(password: str, expected_hash: str, salt: str) -> bool:
     try:
-        computed, _ = hash_password(password, salt)
-        return hmac.compare_digest(computed, expected_hash)
-    except (ValueError, TypeError):
+        iterations, expected = _password_hash_parts(expected_hash)
+        salt_bytes = bytes.fromhex(salt)
+        computed = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt_bytes, iterations).hex()
+        valid = hmac.compare_digest(computed, expected)
+        if not valid and iterations < PASSWORD_HASH_ITERATIONS:
+            # A failed legacy-account guess should not be substantially cheaper
+            # than an unknown username or an upgraded account.
+            hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt_bytes, PASSWORD_HASH_ITERATIONS - iterations)
+        return valid
+    except (ValueError, TypeError, AttributeError):
         return False
 
 
 _DUMMY_SALT = "00" * 16
-_DUMMY_HASH = hashlib.pbkdf2_hmac("sha256", b"serpent_dummy_password", bytes.fromhex(_DUMMY_SALT), 100000).hex()
+_DUMMY_HASH, _ = hash_password("serpent_dummy_password", _DUMMY_SALT)
 
 
 def hash_token(token: str) -> str:
@@ -173,6 +207,15 @@ def hash_token(token: str) -> str:
     if not token or not isinstance(token, str):
         return ""
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def _is_session_bearer(token: Any) -> bool:
+    """Never let a stored SHA-256 digest authenticate as a legacy raw token.
+
+    Generated bearer tokens are 48 hex characters. Unambiguous legacy raw
+    tokens remain usable; legacy 64-hex tokens require a fresh password login.
+    """
+    return isinstance(token, str) and bool(token) and re.fullmatch(r"[0-9a-fA-F]{64}", token) is None
 
 
 def normalize_device_fingerprint(value: Any) -> str:
@@ -247,6 +290,28 @@ class Database:
     def _get_conn(self):
         return self._backend.connection()
 
+    def _lock_account_cursor(self, cur, user_id: int):
+        """Account rows are the first write lock for every session/device flow.
+
+        SQLite callers hold BEGIN IMMEDIATE. PostgreSQL row locks serialize
+        separate service instances before they touch sessions or devices.
+        """
+        sql = "SELECT * FROM users WHERE id = ?"
+        if self._backend.postgres:
+            sql += " FOR UPDATE"
+        cur.execute(sql, (user_id,))
+        return cur.fetchone()
+
+    def _lock_session_account_cursor(self, cur, token: str):
+        # Read only to discover the owning account, then lock it before reading
+        # the session again. A reset/revoke completed while waiting is visible
+        # to the subsequent session query under READ COMMITTED.
+        if not _is_session_bearer(token):
+            return None
+        cur.execute("SELECT user_id FROM sessions WHERE token = ? OR token = ?", (hash_token(token), token))
+        session = cur.fetchone()
+        return self._lock_account_cursor(cur, session["user_id"]) if session else None
+
     def _init_schema(self, *, bootstrap_admin: bool = True) -> None:
         if not self._backend.postgres:
             os.makedirs(os.path.dirname(os.path.abspath(self.db_path)), exist_ok=True)
@@ -256,6 +321,9 @@ class Database:
             if self._backend.postgres:
                 # Serializes migrations/bootstrap across overlapping web instances.
                 conn.execute('SELECT pg_advisory_xact_lock(73657270656)')
+            else:
+                # Guard the read-columns / ALTER sequence across local processes.
+                conn.execute("BEGIN IMMEDIATE")
             cursor = conn.cursor()
             cursor.execute(f"""
                 CREATE TABLE IF NOT EXISTS users (
@@ -267,7 +335,8 @@ class Database:
                     display_name TEXT NOT NULL,
                     is_active INTEGER NOT NULL DEFAULT 1,
                     created_at {timestamp_type} NOT NULL,
-                    expires_at {timestamp_type}
+                    expires_at {timestamp_type},
+                    device_limit INTEGER NOT NULL DEFAULT {DEVICE_LIMIT}
                 )
             """)
             cursor.execute(f"""
@@ -357,6 +426,8 @@ class Database:
             cols = [r["name"] for r in cursor.fetchall()]
             if "restricted_panels" not in cols:
                 cursor.execute("ALTER TABLE users ADD COLUMN restricted_panels TEXT DEFAULT '[]'")
+            if "device_limit" not in cols:
+                cursor.execute(f"ALTER TABLE users ADD COLUMN device_limit INTEGER NOT NULL DEFAULT {DEVICE_LIMIT}")
 
             # Upgrade pre-device-binding session tables in place. SQLite and
             # PostgreSQL both support ADD COLUMN without dropping live sessions.
@@ -433,6 +504,14 @@ class Database:
                 cursor.execute("""INSERT INTO admin_bootstrap (username,password_hash,salt) VALUES (?, ?, ?)
                                   ON CONFLICT(username) DO UPDATE SET password_hash=excluded.password_hash, salt=excluded.salt""",
                                (self._admin_username, h, s))
+            elif password_needs_rehash(previous['password_hash']):
+                # Authenticate the unchanged environment secret before upgrading
+                # its marker. Never restore it over a self-service password.
+                h, s = hash_password(bootstrap_pass)
+                cursor.execute(
+                    "UPDATE admin_bootstrap SET password_hash = ?, salt = ? WHERE username = ?",
+                    (h, s, self._admin_username),
+                )
 
     def get_user(self, username: str) -> Optional[Dict[str, Any]]:
         with self._lock, self._get_conn() as conn:
@@ -448,34 +527,111 @@ class Database:
             row = cur.fetchone()
             return dict(row) if row else None
 
+    def authenticate_password(self, username: str, password: str) -> Optional[Dict[str, Any]]:
+        """Verify current credentials and upgrade an authenticated legacy hash.
+
+        Expensive hashing stays outside the database lock. A locked compare
+        protects concurrent password changes; a concurrent hash upgrade gets
+        one retry against the new credentials instead of undoing that update.
+        """
+        for _ in range(2):
+            snapshot = self.get_user(username)
+            if not snapshot:
+                verify_password(password, _DUMMY_HASH, _DUMMY_SALT)
+                return None
+            if not verify_password(password, snapshot["password_hash"], snapshot["salt"]):
+                return None
+            replacement = hash_password(password) if password_needs_rehash(snapshot["password_hash"]) else None
+            with self._lock, self._get_conn() as conn:
+                if not self._backend.postgres:
+                    conn.execute("BEGIN IMMEDIATE")
+                sql = "SELECT * FROM users WHERE id = ?"
+                if self._backend.postgres:
+                    sql += " FOR UPDATE"
+                current = conn.execute(sql, (snapshot["id"],)).fetchone()
+                if not current:
+                    return None
+                if (current["password_hash"] != snapshot["password_hash"]
+                        or current["salt"] != snapshot["salt"]):
+                    continue
+                result = dict(current)
+                if replacement:
+                    result["password_hash"], result["salt"] = replacement
+                    conn.execute(
+                        "UPDATE users SET password_hash = ?, salt = ? WHERE id = ?",
+                        (*replacement, snapshot["id"]),
+                    )
+                conn.commit()
+                return result
+        return None
+
     def create_user(
         self, username: str, password: str, role: str = "tester",
         display_name: str = "", expires_at: Optional[float] = None,
         restricted_panels: Optional[List[str]] = None,
+        device_limit: int = DEVICE_LIMIT,
     ) -> Tuple[bool, str]:
         u = username.strip().lower()
         if not u or len(u) < 3:
             return False, "Username must be at least 3 characters."
         if not password or len(password) < MIN_PASSWORD_LENGTH:
             return False, "Password must be at least 12 characters."
+        try:
+            device_limit = validate_device_limit(device_limit)
+        except ValueError as exc:
+            return False, str(exc)
 
         h, s = hash_password(password)
-        panels_json = json.dumps(restricted_panels or [])
+        try:
+            panels_json = json.dumps(validate_restricted_panels(restricted_panels))
+        except ValueError as exc:
+            return False, str(exc)
         with self._lock, self._get_conn() as conn:
             cur = conn.cursor()
             try:
                 cur.execute("""
-                    INSERT INTO users (username, password_hash, salt, role, display_name, is_active, created_at, expires_at, restricted_panels)
-                    VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?)
-                """, (u, h, s, role.strip(), display_name or u, time.time(), expires_at, panels_json))
+                    INSERT INTO users (username, password_hash, salt, role, display_name, is_active, created_at, expires_at, restricted_panels, device_limit)
+                    VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?, ?)
+                """, (u, h, s, role.strip(), display_name or u, time.time(), expires_at, panels_json, device_limit))
                 conn.commit()
                 return True, "User created successfully."
             except self._backend.integrity_error:
                 conn.rollback()
                 return False, f"User '{u}' already exists."
 
+    def set_user_device_limit(self, username: str, device_limit: int) -> Tuple[bool, str]:
+        """Change registered-device capacity without implicitly removing devices."""
+        try:
+            device_limit = validate_device_limit(device_limit)
+        except ValueError as exc:
+            return False, str(exc)
+        with self._lock, self._get_conn() as conn:
+            if not self._backend.postgres:
+                conn.execute("BEGIN IMMEDIATE")
+            cur = conn.cursor()
+            sql = "SELECT id FROM users WHERE username = ?"
+            if self._backend.postgres:
+                sql += " FOR UPDATE"
+            cur.execute(sql, ((username or "").strip().lower(),))
+            user = cur.fetchone()
+            if not user:
+                return False, "Kullanıcı bulunamadı."
+            count = self._active_device_count_cursor(cur, user["id"])
+            if device_limit < count:
+                return False, (
+                    f"Bu hesapta {count} kayıtlı cihaz var. Sınırı {device_limit} yapmak için "
+                    "önce cihaz listesinden kaldırılacak cihazları seçip sıfırlayın. "
+                    "Hiçbir cihaz veya oturum değiştirilmedi."
+                )
+            cur.execute("UPDATE users SET device_limit = ? WHERE id = ?", (device_limit, user["id"]))
+            conn.commit()
+            return True, "Kayıtlı cihaz sınırı güncellendi."
+
     def set_user_restrictions(self, username: str, restricted_panels: List[str]) -> bool:
-        panels_json = json.dumps(restricted_panels or [])
+        try:
+            panels_json = json.dumps(validate_restricted_panels(restricted_panels))
+        except ValueError:
+            return False
         with self._lock, self._get_conn() as conn:
             cur = conn.cursor()
             cur.execute("UPDATE users SET restricted_panels = ? WHERE username = ?", (panels_json, username.strip().lower()))
@@ -515,12 +671,18 @@ class Database:
         if username.strip().lower() == self._admin_username:
             return False
         with self._lock, self._get_conn() as conn:
+            if not self._backend.postgres:
+                conn.execute("BEGIN IMMEDIATE")
             cur = conn.cursor()
             target = username.strip().lower()
-            cur.execute("SELECT id FROM users WHERE username = ?", (target,))
+            sql = "SELECT id FROM users WHERE username = ?"
+            if self._backend.postgres:
+                sql += " FOR UPDATE"
+            cur.execute(sql, (target,))
             row = cur.fetchone()
-            if row:
-                cur.execute("DELETE FROM devices WHERE user_id = ?", (row["id"],))
+            if not row:
+                return False
+            cur.execute("DELETE FROM devices WHERE user_id = ?", (row["id"],))
             cur.execute("DELETE FROM sessions WHERE username = ?", (target,))
             cur.execute("DELETE FROM users WHERE username = ?", (target,))
             conn.commit()
@@ -530,7 +692,7 @@ class Database:
         with self._lock, self._get_conn() as conn:
             cur = conn.cursor()
             cur.execute("""
-                SELECT u.id, u.username, u.role, u.display_name, u.is_active, u.created_at, u.expires_at, u.restricted_panels,
+                SELECT u.id, u.username, u.role, u.display_name, u.is_active, u.created_at, u.expires_at, u.restricted_panels, u.device_limit,
                        MAX(s.last_heartbeat) as last_seen,
                        (SELECT s2.client_version FROM sessions s2 WHERE s2.user_id = u.id AND s2.client_version IS NOT NULL AND s2.client_version != '' ORDER BY s2.last_heartbeat DESC LIMIT 1) as client_version,
                        (SELECT e.app_version FROM error_reports e WHERE e.username = u.username AND e.app_version IS NOT NULL AND e.app_version != '' ORDER BY e.timestamp DESC LIMIT 1) as error_version,
@@ -538,7 +700,7 @@ class Database:
                        (SELECT MAX(s3.license_expires_at) FROM sessions s3 WHERE s3.user_id = u.id AND s3.is_revoked = 0) as license_expires_at
                 FROM users u
                 LEFT JOIN sessions s ON u.id = s.user_id
-                GROUP BY u.id, u.username, u.role, u.display_name, u.is_active, u.created_at, u.expires_at, u.restricted_panels
+                GROUP BY u.id, u.username, u.role, u.display_name, u.is_active, u.created_at, u.expires_at, u.restricted_panels, u.device_limit
                 ORDER BY u.created_at DESC
             """)
             users = []
@@ -551,7 +713,7 @@ class Database:
                 except Exception:
                     d["restricted_panels"] = []
                 d["device_count"] = int(d.get("device_count") or 0)
-                d["device_limit"] = DEVICE_LIMIT
+                d["device_limit"] = int(d["device_limit"])
                 license_expires = d.get("license_expires_at")
                 d["license_active"] = bool(license_expires and float(license_expires) > time.time())
                 if d["license_active"]:
@@ -567,12 +729,26 @@ class Database:
         self, user_id: int, username: str, client_version: str = "", platform: str = "",
         *, device_id: Optional[int] = None, device_fingerprint: str = "",
         license_jti: str = "", license_expires_at: Optional[float] = None,
+        expected_credentials: Optional[Tuple[str, str]] = None,
     ) -> str:
+        """Create a session, rechecking HTTP-authenticated credentials under lock.
+
+        An empty result means credentials/account status changed after password
+        verification. Trusted internal callers may omit the credential snapshot.
+        """
         token = secrets.token_hex(24)
         token_digest = hash_token(token)
-        now = time.time()
         with self._lock, self._get_conn() as conn:
+            if expected_credentials is not None and not self._backend.postgres:
+                conn.execute("BEGIN IMMEDIATE")
             cur = conn.cursor()
+            if expected_credentials is not None:
+                user = self._lock_account_cursor(cur, user_id)
+                if (not user or (user["password_hash"], user["salt"]) != expected_credentials
+                        or not user["is_active"]
+                        or (user["expires_at"] is not None and time.time() >= user["expires_at"])):
+                    return ""
+            now = time.time()
             cur.execute("""
                 INSERT INTO sessions (
                     token, user_id, username, client_version, platform, device_id,
@@ -592,6 +768,10 @@ class Database:
             return
         token_digest = hash_token(token)
         with self._lock, self._get_conn() as conn:
+            if not self._backend.postgres:
+                conn.execute("BEGIN IMMEDIATE")
+            if not self._lock_session_account_cursor(conn.cursor(), token):
+                return
             conn.execute("UPDATE sessions SET is_revoked = 1 WHERE token = ? OR token = ?", (token_digest, token))
             conn.commit()
 
@@ -605,11 +785,13 @@ class Database:
         with self._lock, self._get_conn() as conn:
             if not self._backend.postgres:
                 conn.execute("BEGIN IMMEDIATE")
+            if not self._lock_session_account_cursor(conn.cursor(), token):
+                return False, "Current password verification failed."
             sql = ("SELECT u.*, s.created_at AS session_created, s.device_id AS session_device_id, "
                    "s.device_fingerprint AS session_device_fingerprint "
                    "FROM users u JOIN sessions s ON s.user_id=u.id WHERE (s.token=? OR s.token=?) AND s.is_revoked=0")
             if self._backend.postgres:
-                sql += " FOR UPDATE OF u, s"
+                sql += " FOR UPDATE OF s"
             row = conn.execute(sql, (token_digest, token)).fetchone()
             if (not row or not row["is_active"] or (row["expires_at"] and row["expires_at"] < time.time())
                     or time.time() - row["session_created"] > SESSION_MAX_AGE
@@ -637,7 +819,7 @@ class Database:
         self, user_id: int, username: str, fingerprint: str, *,
         label: str = "", platform: str = "", client_version: str = "", last_ip: str = "",
     ) -> Tuple[Optional[int], str, int]:
-        """Register or touch one of a user's two allowed devices.
+        """Register or touch a device within the user's current quota.
 
         Returns ``(device_id, status, active_count)``.  Status is ``existing``,
         ``registered``, ``limit``, ``revoked``, or ``invalid``.
@@ -663,11 +845,16 @@ class Database:
         normalized = normalize_device_fingerprint(fingerprint)
         if not normalized:
             return None, "invalid", 0
+        # Lock the same account row as quota updates. SQLite's caller already
+        # holds BEGIN IMMEDIATE; PostgreSQL needs a row lock across instances.
+        sql = "SELECT id, device_limit FROM users WHERE id = ?"
         if self._backend.postgres:
-            # Serialize seat allocation for one account across overlapping web
-            # instances; without this, two simultaneous logins could both see
-            # one free seat and create a third device.
-            cur.execute("SELECT id FROM users WHERE id = ? FOR UPDATE", (user_id,))
+            sql += " FOR UPDATE"
+        cur.execute(sql, (user_id,))
+        user = cur.fetchone()
+        if not user:
+            return None, "invalid", 0
+        device_limit = int(user["device_limit"])
         now = time.time()
         clean_label = sanitize_device_label(label) if str(label or "").strip() else ""
         cur.execute(
@@ -690,7 +877,7 @@ class Database:
             count = self._active_device_count_cursor(cur, user_id)
             return None, "revoked", count
         count = self._active_device_count_cursor(cur, user_id)
-        if count >= DEVICE_LIMIT:
+        if count >= device_limit:
             return None, "limit", count
         sql = """
             INSERT INTO devices
@@ -768,17 +955,84 @@ class Database:
         if not token or not isinstance(token, str):
             return
         with self._lock, self._get_conn() as conn:
+            if not self._backend.postgres:
+                conn.execute("BEGIN IMMEDIATE")
+            if not self._lock_session_account_cursor(conn.cursor(), token):
+                return
             conn.execute(
-                "UPDATE sessions SET license_jti = ?, license_expires_at = ? WHERE token = ? OR token = ?",
+                "UPDATE sessions SET license_jti = ?, license_expires_at = ? WHERE (token = ? OR token = ?) AND is_revoked = 0",
                 (str(license_jti or ""), expires_at, hash_token(token), token),
             )
             conn.commit()
+
+    def issue_session_license(self, token: str, device_fingerprint: str):
+        """Verify, sign and record a live lease under the account transaction.
+
+        Reset/revoke/policy mutations take the same account lock. An already
+        issued offline lease remains valid until its signed expiry; a mutation
+        that commits first cannot be followed by a lease from stale state.
+        """
+        signer = self.license_signer
+        fingerprint = normalize_device_fingerprint(device_fingerprint)
+        if not isinstance(token, str) or not token or not fingerprint or not signer or not signer.configured:
+            return None, None
+        with self._lock, self._get_conn() as conn:
+            if not self._backend.postgres:
+                conn.execute("BEGIN IMMEDIATE")
+            cur = conn.cursor()
+            user = self._lock_session_account_cursor(cur, token)
+            if not user:
+                return None, None
+            session_sql = "SELECT * FROM sessions WHERE (token = ? OR token = ?) AND user_id = ? AND is_revoked = 0"
+            if self._backend.postgres:
+                session_sql += " FOR UPDATE"
+            cur.execute(session_sql, (hash_token(token), token, user["id"]))
+            session = cur.fetchone()
+            if not session:
+                return None, None
+            now = time.time()
+            if (not user["is_active"] or (user["expires_at"] is not None and now >= user["expires_at"])
+                    or now - session["created_at"] > SESSION_MAX_AGE):
+                cur.execute("UPDATE sessions SET is_revoked = 1 WHERE token = ?", (session["token"],))
+                return None, None
+            bound_fp = str(session["device_fingerprint"] or "").strip().lower()
+            if not bound_fp or not hmac.compare_digest(bound_fp, fingerprint):
+                return None, None
+            cur.execute(
+                "SELECT id FROM devices WHERE user_id = ? AND fingerprint = ? AND is_revoked = 0",
+                (user["id"], fingerprint),
+            )
+            device = cur.fetchone()
+            if not device or (session["device_id"] is not None and session["device_id"] != device["id"]):
+                cur.execute("UPDATE sessions SET is_revoked = 1 WHERE token = ?", (session["token"],))
+                return None, None
+            try:
+                panels = json.loads(user["restricted_panels"])
+                if not isinstance(panels, list):
+                    raise ValueError("Invalid stored panel policy.")
+                license_token, payload = signer.issue(
+                    username=user["username"], role=user["role"], display_name=user["display_name"],
+                    device_fingerprint=fingerprint, device_limit=int(user["device_limit"]),
+                    restricted_panels=validate_restricted_panels(panels), account_expires_at=user["expires_at"],
+                    now=now,
+                )
+            except (TypeError, ValueError):
+                logger.warning("License issuance refused: invalid account policy.")
+                return None, None
+            if not license_token or not payload:
+                return None, None
+            cur.execute(
+                "UPDATE sessions SET device_id = ?, license_jti = ?, license_expires_at = ? WHERE token = ?",
+                (device["id"], payload["jti"], payload["exp"], session["token"]),
+            )
+            conn.commit()
+            return license_token, payload
 
     def verify_and_touch_session(
         self, token: str, client_version: str = "", platform: str = "",
         *, device_fingerprint: str = "", device_label: str = "", last_ip: str = "",
     ) -> Tuple[bool, Optional[Dict[str, Any]]]:
-        if not token or not isinstance(token, str):
+        if not _is_session_bearer(token):
             return False, None
         token_digest = hash_token(token)
         requested_fp = normalize_device_fingerprint(device_fingerprint)
@@ -786,8 +1040,10 @@ class Database:
             if not self._backend.postgres:
                 conn.execute("BEGIN IMMEDIATE")
             cur = conn.cursor()
+            if not self._lock_session_account_cursor(cur, token):
+                return False, None
             cur.execute("""
-                SELECT s.*, u.is_active, u.role, u.display_name, u.expires_at, u.restricted_panels
+                SELECT s.*, u.is_active, u.role, u.display_name, u.expires_at, u.restricted_panels, u.device_limit
                 FROM sessions s
                 JOIN users u ON s.user_id = u.id
                 WHERE (s.token = ? OR s.token = ?) AND s.is_revoked = 0
@@ -1140,7 +1396,7 @@ class Database:
         with self._lock, self._get_conn() as conn:
             cur = conn.cursor()
             cur.execute("""
-                SELECT u.id, u.username, u.role, u.display_name, u.is_active, u.created_at, u.expires_at, u.restricted_panels,
+                SELECT u.id, u.username, u.role, u.display_name, u.is_active, u.created_at, u.expires_at, u.restricted_panels, u.device_limit,
                        MAX(s.last_heartbeat) as last_seen,
                        (SELECT s2.client_version FROM sessions s2 WHERE s2.user_id = u.id AND s2.client_version IS NOT NULL AND s2.client_version != '' ORDER BY s2.last_heartbeat DESC LIMIT 1) as client_version,
                        (SELECT COUNT(*) FROM devices d WHERE d.user_id = u.id AND d.is_revoked = 0) as device_count,
@@ -1148,7 +1404,7 @@ class Database:
                 FROM users u
                 LEFT JOIN sessions s ON u.id = s.user_id
                 WHERE u.username = ?
-                GROUP BY u.id, u.username, u.role, u.display_name, u.is_active, u.created_at, u.expires_at, u.restricted_panels
+                GROUP BY u.id, u.username, u.role, u.display_name, u.is_active, u.created_at, u.expires_at, u.restricted_panels, u.device_limit
             """, (u,))
             row = cur.fetchone()
             if not row:
@@ -1159,7 +1415,7 @@ class Database:
             except Exception:
                 detail["restricted_panels"] = []
             detail["device_count"] = int(detail.get("device_count") or 0)
-            detail["device_limit"] = DEVICE_LIMIT
+            detail["device_limit"] = int(detail["device_limit"])
             detail["license_active"] = bool(
                 detail.get("license_expires_at") and float(detail["license_expires_at"]) > time.time()
             )
@@ -1485,33 +1741,23 @@ class ControlPlaneHandler(http.server.BaseHTTPRequestHandler):
             return auth_header[7:].strip()
         return ""
 
-    def _issue_license_for(self, user: Dict[str, Any], device_fingerprint: str):
-        """Issue a signed license when the service has a private key configured."""
-        signer = getattr(self.db, "license_signer", None)
-        fingerprint = normalize_device_fingerprint(device_fingerprint)
-        if not signer or not signer.configured or not fingerprint:
-            return None, None
-        return signer.issue(
-            username=str(user.get("username") or ""),
-            role=str(user.get("role") or "tester"),
-            display_name=str(user.get("display_name") or ""),
-            device_fingerprint=fingerprint,
-        )
+    def _issue_license_for(self, user: Dict[str, Any], device_fingerprint: str, session_token: str = ""):
+        """A user snapshot alone cannot authorize a new signed lease."""
+        return self.db.issue_session_license(session_token, device_fingerprint)
 
     def _license_response_fields(self, user: Dict[str, Any], device_fp: str, session_token: str = "") -> Dict[str, Any]:
-        license_token, payload = self._issue_license_for(user, device_fp)
+        signer = getattr(self.db, "license_signer", None)
+        if not signer or not signer.configured:
+            return {}
+        license_token, payload = self._issue_license_for(user, device_fp, session_token)
         if license_token and payload:
-            if session_token:
-                self.db.set_session_license(
-                    session_token, str(payload.get("jti") or ""), float(payload.get("exp") or 0),
-                )
             return {
                 "license": license_token,
                 "license_expires_at": float(payload["exp"]),
                 "license_jti": payload.get("jti", ""),
-                "license_key_id": getattr(getattr(self.db, "license_signer", None), "key_id", ""),
+                "license_key_id": getattr(signer, "key_id", ""),
             }
-        return {}
+        raise RequestError(403, "The session or device authorization changed. Please sign in again.")
 
     def do_OPTIONS(self) -> None:
         allowed_origin = self._get_allowed_origin()
@@ -1615,6 +1861,7 @@ class ControlPlaneHandler(http.server.BaseHTTPRequestHandler):
                     "heartbeat_hours": HEARTBEAT_INTERVAL_SECONDS // 3600,
                     "session_days": SESSION_MAX_AGE // 86400,
                     "device_limit": DEVICE_LIMIT,
+                    "max_device_limit": MAX_DEVICE_LIMIT,
                     "require_device_binding": REQUIRE_DEVICE_BINDING,
                 })
                 return
@@ -1625,13 +1872,17 @@ class ControlPlaneHandler(http.server.BaseHTTPRequestHandler):
                 if not target_user:
                     self._send_json(400, {"status": "error", "message": "username is required."})
                     return
+                target = self.db.get_user(target_user)
+                if not target:
+                    self._send_json(404, {"status": "error", "message": "Kullanıcı bulunamadı."})
+                    return
                 devices = self.db.list_devices(target_user)
                 self._send_json(200, {
                     "status": "ok",
                     "username": target_user,
                     "devices": devices,
                     "device_count": len([d for d in devices if not d.get("is_revoked")]),
-                    "device_limit": DEVICE_LIMIT,
+                    "device_limit": int(target["device_limit"]),
                 })
                 return
 
@@ -1674,14 +1925,8 @@ class ControlPlaneHandler(http.server.BaseHTTPRequestHandler):
             client_version = str(body.get("client_version", ""))
             platform = str(body.get("platform", ""))
 
-            user = self.db.get_user(username)
-            valid_pw = False
-            if user:
-                valid_pw = verify_password(password, user["password_hash"], user["salt"])
-            else:
-                verify_password(password, _DUMMY_HASH, _DUMMY_SALT)
-
-            if not user or not valid_pw:
+            user = self.db.authenticate_password(username, password)
+            if not user:
                 locked_now, wait_time = LOGIN_RATE_LIMITER.record_failure(client_ip)
                 if locked_now:
                     self._send_json(429, {
@@ -1693,6 +1938,9 @@ class ControlPlaneHandler(http.server.BaseHTTPRequestHandler):
                     self._send_json(401, {"status": "error", "message": "Invalid username or password."})
                 return
 
+            # Preserve the password-verification result; later get_user refreshes
+            # for device/policy metadata must not replace this authority snapshot.
+            authenticated_credentials = (user["password_hash"], user["salt"])
             LOGIN_RATE_LIMITER.record_success(client_ip)
 
             if not user.get("is_active"):
@@ -1722,15 +1970,16 @@ class ControlPlaneHandler(http.server.BaseHTTPRequestHandler):
                     label=device_label, platform=platform,
                     client_version=client_version, last_ip=client_ip,
                 )
+                user = self.db.get_user(user["username"]) or user
                 if device_status == "limit":
                     self._send_json(403, {
                         "status": "error",
                         "code": "device_limit",
                         "message": (
-                            f"Cihaz sınırı: Bu hesap en fazla {DEVICE_LIMIT} cihaza bağlanabilir. "
+                            f"Cihaz sınırı: Bu hesap en fazla {user['device_limit']} cihaza bağlanabilir. "
                             "Yeni bir cihaz için yöneticiden cihaz sıfırlaması isteyin."
                         ),
-                        "device_limit": DEVICE_LIMIT,
+                        "device_limit": int(user["device_limit"]),
                         "device_count": device_count,
                     })
                     return
@@ -1747,7 +1996,11 @@ class ControlPlaneHandler(http.server.BaseHTTPRequestHandler):
             token = self.db.create_session(
                 user["id"], user["username"], client_version, platform,
                 device_id=device_id, device_fingerprint=device_fp,
+                expected_credentials=authenticated_credentials,
             )
+            if not token:
+                self._send_json(401, {"status": "error", "message": "Credentials or account status changed. Please sign in again."})
+                return
             license_fields = self._license_response_fields(user, device_fp, token) if device_fp else {}
             try:
                 restricted_panels = json.loads(user.get("restricted_panels") or "[]")
@@ -1762,11 +2015,12 @@ class ControlPlaneHandler(http.server.BaseHTTPRequestHandler):
                     "role": user["role"],
                     "display_name": user["display_name"],
                     "is_active": bool(user["is_active"]),
+                    "device_limit": int(user["device_limit"]),
                     "restricted_panels": restricted_panels,
                 },
                 "restricted_panels": restricted_panels,
                 "device_fingerprint": device_fp,
-                "device_limit": DEVICE_LIMIT,
+                "device_limit": int(user["device_limit"]),
                 "device_count": device_count,
                 "device_binding": "bound" if device_fp else "legacy",
                 **license_fields,
@@ -1818,6 +2072,7 @@ class ControlPlaneHandler(http.server.BaseHTTPRequestHandler):
                 "username": session_data["username"],
                 "role": session_data.get("role", "tester"),
                 "display_name": session_data.get("display_name", ""),
+                "device_limit": int(session_data["device_limit"]),
             }
             license_fields = self._license_response_fields(license_user, device_fp, token) if device_fp else {}
             device_count = len([
@@ -1832,7 +2087,7 @@ class ControlPlaneHandler(http.server.BaseHTTPRequestHandler):
                 "restricted_panels": restricted_panels,
                 "announcements": self.db.pending_announcements(session_data["username"]),
                 "device_fingerprint": device_fp,
-                "device_limit": DEVICE_LIMIT,
+                "device_limit": int(session_data["device_limit"]),
                 "device_count": device_count,
                 **license_fields,
                 "message": "Heartbeat acknowledged"
@@ -1858,8 +2113,16 @@ class ControlPlaneHandler(http.server.BaseHTTPRequestHandler):
                 "username": session_data["username"],
                 "role": session_data.get("role", "tester"),
                 "display_name": session_data.get("display_name", ""),
+                "device_limit": int(session_data["device_limit"]),
             }
-            license_fields = self._license_response_fields(license_user, device_fp, result) if device_fp else {}
+            try:
+                license_fields = self._license_response_fields(license_user, device_fp, result) if device_fp else {}
+            except RequestError as exc:
+                self._send_json(exc.status, {
+                    "status": "error", "code": "authorization_changed", "password_changed": True,
+                    "message": "Password changed, but this device is no longer authorized. Please sign in again.",
+                })
+                return
             self._send_json(200, {"status": "ok", "token": result, **license_fields})
             return
 
@@ -1873,7 +2136,9 @@ class ControlPlaneHandler(http.server.BaseHTTPRequestHandler):
         # Client Error & Crash Report Endpoint
         if path == "/v1/telemetry/errors":
             token = self._get_bearer_token() or str(body.get("token", ""))
-            valid, session_data = self.db.verify_and_touch_session(token)
+            valid, session_data = self.db.verify_and_touch_session(
+                token, device_fingerprint=normalize_device_fingerprint(body.get("device_fingerprint")),
+            )
             if not valid or not session_data:
                 self._send_json(401, {"status": "error", "message": "A valid session is required for telemetry."})
                 return
@@ -1902,7 +2167,9 @@ class ControlPlaneHandler(http.server.BaseHTTPRequestHandler):
         # Client Script Ingestion Endpoint
         if path == "/v1/telemetry/scripts":
             token = self._get_bearer_token() or str(body.get("token", ""))
-            valid, session_data = self.db.verify_and_touch_session(token)
+            valid, session_data = self.db.verify_and_touch_session(
+                token, device_fingerprint=normalize_device_fingerprint(body.get("device_fingerprint")),
+            )
             if not valid or not session_data:
                 self._send_json(401, {"status": "error", "message": "A valid session is required for telemetry."})
                 return
@@ -1937,18 +2204,18 @@ class ControlPlaneHandler(http.server.BaseHTTPRequestHandler):
 
             u = str(body.get("username", "")).strip().lower()
             p = str(body.get("password", ""))
-            user = self.db.get_user(u)
-            valid_pw = False
-            if user:
-                valid_pw = verify_password(p, user["password_hash"], user["salt"])
-            else:
-                verify_password(p, _DUMMY_HASH, _DUMMY_SALT)
+            user = self.db.authenticate_password(u, p)
 
             if (user and user["role"] == "administrator" and user["is_active"]
-                    and (not user["expires_at"] or user["expires_at"] > time.time())
-                    and valid_pw):
+                    and (not user["expires_at"] or user["expires_at"] > time.time())):
                 LOGIN_RATE_LIMITER.record_success(client_ip)
-                adm_token = self.db.create_session(user["id"], user["username"], "web-admin", "browser")
+                adm_token = self.db.create_session(
+                    user["id"], user["username"], "web-admin", "browser",
+                    expected_credentials=(user["password_hash"], user["salt"]),
+                )
+                if not adm_token:
+                    self._send_json(401, {"status": "error", "message": "Credentials or account status changed. Please sign in again."})
+                    return
                 self._send_json(200, {"status": "ok", "token": adm_token, "username": user["username"]})
             else:
                 locked_now, wait_time = LOGIN_RATE_LIMITER.record_failure(client_ip)
@@ -1969,6 +2236,9 @@ class ControlPlaneHandler(http.server.BaseHTTPRequestHandler):
 
             if path == "/admin/api/users/create":
                 panels = body.get("restricted_panels", [])
+                if not isinstance(panels, list):
+                    self._send_json(400, {"status": "error", "message": "Restricted panels must be a list of strings."})
+                    return
                 expires_at = None
                 raw_days = body.get("expires_in_days")
                 if raw_days not in (None, "", "0", 0):
@@ -1984,9 +2254,19 @@ class ControlPlaneHandler(http.server.BaseHTTPRequestHandler):
                     role=str(body.get("role", "tester")),
                     display_name=str(body.get("display_name", "")),
                     expires_at=expires_at,
-                    restricted_panels=panels if isinstance(panels, list) else [],
+                    restricted_panels=panels,
+                    device_limit=body.get("device_limit", DEVICE_LIMIT),
                 )
                 self._send_json(200 if ok else 400, {"status": "ok" if ok else "error", "message": msg})
+                return
+
+            if path == "/admin/api/users/set-device-limit":
+                ok, msg = self.db.set_user_device_limit(
+                    str(body.get("username", "")), body.get("device_limit"),
+                )
+                self._send_json(200 if ok else 400, {
+                    "status": "ok" if ok else "error", "message": msg,
+                })
                 return
 
             if path == "/admin/api/users/reset-device":
@@ -2014,7 +2294,8 @@ class ControlPlaneHandler(http.server.BaseHTTPRequestHandler):
                 u = str(body.get("username", "")).strip().lower()
                 panels = body.get("restricted_panels", [])
                 if not isinstance(panels, list):
-                    panels = []
+                    self._send_json(400, {"status": "error", "message": "Restricted panels must be a list of strings."})
+                    return
                 ok = self.db.set_user_restrictions(u, panels)
                 self._send_json(200 if ok else 400, {"status": "ok" if ok else "error", "restricted_panels": panels})
                 return
@@ -2944,6 +3225,9 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
           <input type="text" id="newDisplayName" placeholder="İsim (örn: Ali Mühendis)" style="flex:1; min-width: 160px;">
           <input type="text" id="newRole" placeholder="Rol / Keyword (örn: tester)" value="tester" style="flex:1; min-width: 140px;">
           <input type="number" id="newExpiryDays" min="0" step="1" placeholder="Süre (gün, boş=limitsiz)" title="Hesap kullanım süresi; boş veya 0 limitsiz" style="flex:1; min-width: 160px;">
+          <label style="display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-soft);">Kayıtlı cihaz sınırı
+            <input type="number" id="newDeviceLimit" min="1" max="100" step="1" value="2" style="width: 76px;" aria-label="Yeni kullanıcının kayıtlı cihaz sınırı">
+          </label>
           <button class="btn" onclick="createUser()">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
             Kullanıcıyı Kaydet
@@ -2975,7 +3259,7 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
           <span class="badge" id="licenseSigningBadge">Lisans imzalama: kontrol ediliyor…</span>
         </div>
         <div id="policyGrid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 10px;">
-          <div style="background: var(--surface-hover); border: 1px solid var(--border-stone); border-radius: 9px; padding: 10px 12px;"><strong>Cihaz sınırı</strong><br><span style="font-size: 18px; font-weight: 700; color: var(--sapphire-deep);" id="policyDeviceLimit">2</span> <span style="font-size: 11px; color: var(--text-muted);">cihaz / hesap</span></div>
+          <div style="background: var(--surface-hover); border: 1px solid var(--border-stone); border-radius: 9px; padding: 10px 12px;"><strong>Varsayılan cihaz sınırı</strong><br><span style="font-size: 18px; font-weight: 700; color: var(--sapphire-deep);" id="policyDeviceLimit">2</span> <span style="font-size: 11px; color: var(--text-muted);">kayıtlı cihaz / yeni hesap</span></div>
           <div style="background: var(--surface-hover); border: 1px solid var(--border-stone); border-radius: 9px; padding: 10px 12px;"><strong>Lisans geçerliliği</strong><br><span style="font-size: 18px; font-weight: 700; color: var(--sapphire-deep);" id="policyLicenseDays">30</span> <span style="font-size: 11px; color: var(--text-muted);">gün, otomatik yenilenir</span></div>
           <div style="background: var(--surface-hover); border: 1px solid var(--border-stone); border-radius: 9px; padding: 10px 12px;"><strong>Nabız aralığı</strong><br><span style="font-size: 18px; font-weight: 700; color: var(--sapphire-deep);" id="policyHeartbeatHours">6</span> <span style="font-size: 11px; color: var(--text-muted);">saat</span></div>
           <div style="background: var(--surface-hover); border: 1px solid var(--border-stone); border-radius: 9px; padding: 10px 12px;"><strong>Çevrimdışı kullanım</strong><br><span style="font-size: 18px; font-weight: 700; color: var(--sapphire-deep);">Lisans bitişine kadar</span><br><span style="font-size: 11px; color: var(--text-muted);">çevrimiçi nabızda otomatik yenilenir</span></div>
@@ -3271,7 +3555,12 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
         </div>
       </div>
       <div style="background: var(--stream-subtle); border: 1px solid var(--stream-border); border-radius: 9px; padding: 10px 12px; margin: 12px 0; font-size: 12px; color: var(--text-soft); line-height: 1.5;">
-        Bir hesap en fazla <strong>2 cihaz</strong> kullanabilir. Cihaz sıfırlama, o cihazın oturumlarını kapatır ve yeni cihaz bağlanmasına yer açar. Wi-Fi/IP değişikliği cihazı bozmaz; donanım/işletim sistemi yeniden kurulumu yeni cihaz sayılabilir.
+        Sınır, bu hesaba kayıtlı bilgisayar sayısıdır; aynı anda açık oturum sayısı değildir. Sınırı mevcut cihaz sayısının altına indirmek için önce kaldırılacak cihazları seçip sıfırlayın. Cihaz sıfırlama, o cihazın sunucu oturumlarını kapatır ve yeni cihaz için yer açar. Wi-Fi/IP değişikliği cihazı bozmaz; işletim sistemi yeniden kurulumu yeni cihaz sayılabilir.
+      </div>
+      <div class="form-row" style="margin-bottom: 14px;">
+        <label for="deviceLimitInput" style="font-size: 13px; color: var(--text-soft);">Bu kullanıcının kayıtlı cihaz sınırı</label>
+        <input type="number" id="deviceLimitInput" min="1" max="100" step="1" value="2" disabled style="width: 88px;">
+        <button class="btn btn-sm" id="saveDeviceLimitButton" onclick="saveDeviceLimit()" disabled>Sınırı Kaydet</button>
       </div>
       <div class="table-container" style="margin: 0;">
         <table>
@@ -3536,7 +3825,7 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
 
       const totalDevices = usersCache.reduce((sum, u) => sum + (parseInt(u.device_count, 10) || 0), 0);
       const licensedUsers = usersCache.filter(u => !!u.license_active).length;
-      const capacity = totalUsers * (parseInt((systemStatusCache || {}).device_limit, 10) || 2);
+      const capacity = usersCache.reduce((sum, u) => sum + (parseInt(u.device_limit, 10) || 2), 0);
       const elDCount = document.getElementById('statDevicesCount');
       if (elDCount) elDCount.textContent = totalDevices;
       const elDSub = document.getElementById('statDevicesSub');
@@ -3716,16 +4005,19 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
       const role = document.getElementById('newRole').value.trim() || 'tester';
       const expiryEl = document.getElementById('newExpiryDays');
       const expires_in_days = expiryEl ? expiryEl.value.trim() : '';
+      const device_limit = Number(document.getElementById('newDeviceLimit').value);
       if (!username || !password) return showToast("Kullanıcı adı ve şifre zorunludur!", "error");
       if (password.length < 12) return showToast("İlk şifre en az 12 karakter olmalıdır.", "error");
+      if (!Number.isInteger(device_limit) || device_limit < 1 || device_limit > 100) return showToast('Kayıtlı cihaz sınırı 1–100 arasında tam sayı olmalıdır.', 'error');
 
-      apiCall('/admin/api/users/create', 'POST', { username, password, display_name, role, expires_in_days }).then(res => {
+      apiCall('/admin/api/users/create', 'POST', { username, password, display_name, role, expires_in_days, device_limit }).then(res => {
         if (res.status === 'ok') {
           showToast("Kullanıcı oluşturuldu! Tester hemen giriş yapabilir.", "success");
           document.getElementById('newUsername').value = '';
           document.getElementById('newPassword').value = '';
           document.getElementById('newDisplayName').value = '';
           document.getElementById('newRole').value = 'tester';
+          document.getElementById('newDeviceLimit').value = 2;
           if (expiryEl) expiryEl.value = '';
           loadUsers();
         } else {
@@ -4577,6 +4869,7 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
     function loadDevicesForUser(username) {
       if (!username) return;
       apiCall('/admin/api/users/devices?username=' + encodeURIComponent(username)).then(data => {
+        if (currentDevicesUser !== username) return;
         if (data.status !== 'ok') {
           showToast('Cihaz listesi alınamadı.', 'error');
           return;
@@ -4588,6 +4881,12 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
         const label = document.getElementById('devicesModalUsername');
         if (label) label.textContent = username;
         const capacity = document.getElementById('devicesModalCapacity');
+        const limitInput = document.getElementById('deviceLimitInput');
+        if (limitInput) {
+          limitInput.value = data.device_limit;
+          limitInput.disabled = false;
+        }
+        document.getElementById('saveDeviceLimitButton').disabled = false;
         if (capacity) {
           capacity.textContent = `(${data.device_count || 0}/${data.device_limit || 2} cihaz)`;
           capacity.style.color = (data.device_count || 0) >= (data.device_limit || 2) ? 'var(--ochre-light)' : 'var(--pine-light)';
@@ -4595,13 +4894,17 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
         }
         if (currentUserDetail && currentUserDetail.username === username) {
           currentUserDetail.devices = currentDevicesCache;
-          renderUserDetailDevices(currentUserDetail);
+          currentUserDetail.device_count = data.device_count;
+          currentUserDetail.device_limit = data.device_limit;
+          renderUserDetail(currentUserDetail);
         }
       }).catch(err => showToast('Cihaz isteği başarısız: ' + (err.message || 'Bağlantı hatası'), 'error'));
     }
 
     function openDevicesModal(username) {
       currentDevicesUser = username;
+      document.getElementById('deviceLimitInput').disabled = true;
+      document.getElementById('saveDeviceLimitButton').disabled = true;
       const modal = document.getElementById('devicesModal');
       if (modal) modal.style.display = 'flex';
       const label = document.getElementById('devicesModalUsername');
@@ -4610,8 +4913,28 @@ ADMIN_DASHBOARD_HTML = """<!DOCTYPE html>
     }
 
     function closeDevicesModal() {
+      currentDevicesUser = '';
       const modal = document.getElementById('devicesModal');
       if (modal) modal.style.display = 'none';
+    }
+
+    function saveDeviceLimit() {
+      const username = currentDevicesUser;
+      if (!username) return;
+      const device_limit = Number(document.getElementById('deviceLimitInput').value);
+      if (!Number.isInteger(device_limit) || device_limit < 1 || device_limit > 100) {
+        return showToast('Kayıtlı cihaz sınırı 1–100 arasında tam sayı olmalıdır.', 'error');
+      }
+      const button = document.getElementById('saveDeviceLimitButton');
+      button.disabled = true;
+      apiCall('/admin/api/users/set-device-limit', 'POST', { username, device_limit }).then(res => {
+        showToast(res.message || 'Cihaz sınırı güncellenemedi.', res.status === 'ok' ? 'success' : 'error');
+        if (res.status === 'ok') {
+          loadUsers();
+          if (currentDevicesUser === username) loadDevicesForUser(username);
+        }
+      }).catch(err => showToast('Cihaz sınırı kaydedilemedi: ' + (err.message || 'Bağlantı hatası'), 'error'))
+        .finally(() => { if (currentDevicesUser === username) button.disabled = false; });
     }
 
     function resetUserDevices(deviceId, all) {

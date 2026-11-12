@@ -13,6 +13,7 @@ import base64
 import hashlib
 import json
 import logging
+import math
 import os
 import secrets
 import time
@@ -24,9 +25,27 @@ LICENSE_ISSUER = "serpent-studio-control-plane"
 LICENSE_AUDIENCE = "serpent-studio-desktop"
 LICENSE_KEY_ID = "serpent-2026-1"
 LICENSE_VERSION = 1
+LICENSE_POLICY_VERSION = 1
 LICENSE_TTL_SECONDS = 30 * 86400
 DEVICE_LIMIT = 2
+MAX_DEVICE_LIMIT = 100
 HEARTBEAT_INTERVAL_SECONDS = 6 * 3600
+
+
+def validate_device_limit(value: Any) -> int:
+    """Reject coercions (including bool/float) for an administrator's quota."""
+    if type(value) is not int or not 1 <= value <= MAX_DEVICE_LIMIT:
+        raise ValueError(f"Kayıtlı cihaz sınırı 1–{MAX_DEVICE_LIMIT} arasında tam sayı olmalıdır.")
+    return value
+
+
+def validate_restricted_panels(value: Any) -> list[str]:
+    """Preserve panel identifiers; never turn a malformed policy into full access."""
+    if value is None:
+        return []
+    if not isinstance(value, list) or any(not isinstance(panel, str) or not panel.strip() for panel in value):
+        raise ValueError("Restricted panels must be a list of nonempty strings.")
+    return list(value)
 
 
 def _b64url_encode(value: bytes) -> str:
@@ -129,6 +148,9 @@ class LicenseSigner:
         role: str,
         display_name: str,
         device_fingerprint: str,
+        device_limit: int = DEVICE_LIMIT,
+        restricted_panels: Optional[list[str]] = None,
+        account_expires_at: Optional[float] = None,
         ttl_seconds: int = LICENSE_TTL_SECONDS,
         now: Optional[float] = None,
     ) -> Tuple[Optional[str], Optional[Dict[str, Any]]]:
@@ -136,18 +158,34 @@ class LicenseSigner:
         if not self.configured or not device_fingerprint:
             return None, None
         issued_at = float(time.time() if now is None else now)
+        if not math.isfinite(issued_at):
+            raise ValueError("License issue time must be finite.")
+        if isinstance(ttl_seconds, bool) or not isinstance(ttl_seconds, (int, float)) or not math.isfinite(ttl_seconds):
+            raise ValueError("License lifetime must be finite.")
+        expires_at = issued_at + min(ttl_seconds, LICENSE_TTL_SECONDS)
+        if account_expires_at is not None:
+            if (isinstance(account_expires_at, bool)
+                    or not isinstance(account_expires_at, (int, float))
+                    or not math.isfinite(account_expires_at)):
+                raise ValueError("Account expiry must be a finite timestamp or null.")
+            expires_at = min(expires_at, account_expires_at)
+        if expires_at <= issued_at:
+            return None, None
         payload: Dict[str, Any] = {
             "iss": LICENSE_ISSUER,
             "aud": LICENSE_AUDIENCE,
             "ver": LICENSE_VERSION,
+            "policy_version": LICENSE_POLICY_VERSION,
             "sub": str(username or "").strip().lower(),
             "role": str(role or "tester"),
             "name": str(display_name or ""),
             "device": str(device_fingerprint).strip().lower(),
-            "seat_limit": DEVICE_LIMIT,
+            "seat_limit": validate_device_limit(device_limit),
+            "restricted_panels": validate_restricted_panels(restricted_panels),
+            "account_expires_at": account_expires_at,
             "iat": int(issued_at),
             "nbf": int(issued_at) - 60,
-            "exp": int(issued_at) + max(60, int(ttl_seconds)),
+            "exp": expires_at,
             "jti": secrets.token_hex(16),
         }
         header = {"alg": "Ed25519", "typ": "SerpentLicense", "kid": self.key_id}

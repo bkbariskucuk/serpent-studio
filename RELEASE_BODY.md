@@ -1,9 +1,10 @@
-# Serpent Studio v1.4.75.90
+# Serpent Studio v1.4.76.91
 
-- Kullanıcı tercihiyle MINOR 4 korundu; bağımsız PATCH/BUILD sayaçları +1.
-- Dinamik dedektör envanteri, çok katmanlı datamesh ve enerji grupları düzenleme/yardım kartları; yerel undo/redo ve kompakt yerleşim.
-- İşletme komutları için tıklamalı EN/TR rehber, set seed desteği ve termal seçim doğrulaması.
-- Üç performans kademesi, yenilenen aurora açılışı, silüet uygulama ikonu ve masaüstü kurulum desteği.
-- Karşılaştırma imlecinde kısmi çizim, dedektör doğrulama önbelleği, görünmeyen dekoratif saatlerin durması, tema stil tekrarlarının ve kanvas çizim tekrarlarının azaltılması.
-- Kare kafeste dikey aynalanma ve çift boyutlu altıgenlerde merkez kayması düzeltildi; matris sırası/kimlikleri korunur. Serpent 2.2.3 ile 48 plot / 180 konum doğrulandı.
-- Son geliştirme doğrulamasında 138 hedefli test geçti. Offscreen ölçümler native FPS garantisi değildir; fizik/transport sonuçları bu geometri kontrolünün kapsamı dışındadır.
+- PySide6 ana arayüz ve dağıtım bağı oldu; eski PyQt6 çalışma kopyası ayrı korunur.
+- Resmî Serpent Plotter seçilen kaynak uygulamasını değiştirmeden kendi panelinde çalıştırır. Linux X11/XWayland gömme, aynı oturumla ayır/geri yerleştir, yeniden bağlantı ve süreç temizliği desteklenir. Serpent 2.2.4+ notu görünür; gerçek motor doğrulaması 2.2.5 ile yapıldı.
+- Plotter bağlantısı etkin, doğrulanmış belgeyi ve include anlık görüntüsünü kullanır; kaynak yolu görünür, geçici girdide özgün dosya adı korunur. Eksik/geçersiz/bekleyen girdide eski veya örnek model başlatılmaz. Oturum açıkken belge değişirse yenileme gereği belirtilir.
+- Bağımsız Studio Plotter, Assembly Inspector ve malzeme/kesit denetimleri geliştirildi; tekrarlanan kesit ve renk işlemlerinde önbellek/toplu çizim optimizasyonları yapıldı.
+- Sekme geçişi native çökmesi, önizleme çerçeve titremesi, Definition Preview konum sıçraması ve pop-out odak yarışı düzeltildi. Run logları yoğun kullanımda sınırlı dilimlerle çizilir.
+- Erişilebilirliğe Panel Boyutlarını Varsayılana Döndür komutu eklendi; komut paleti/global aramadan bulunabilir.
+- Son Plotter/başlatma regresyonunda 133 tekil test geçti; gerçek PPF modeli, gömülü pencere ebeveynliği, üç pop-out turu, yeniden bağlantı ve doğal kapanış doğrulandı. Bu sonuç tam fiziksel validasyon veya GPU/FPS garantisi değildir.
+- Geliştirici workspace’i, gerçek hesap çıktıları ve nükleer veri kütüphaneleri dağıtıma alınmaz.
